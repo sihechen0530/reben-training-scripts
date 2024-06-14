@@ -20,7 +20,7 @@ __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 BASE_DIR = Path("~/data").expanduser()
 BENv2_DIR = BASE_DIR / "BigEarthNet-V2"
 
-BENv2_DIR_PLUTO = Path("ls /home/kaiclasen/bigearthnet-pipeline/artifacts-result")
+BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline/artifacts-result")
 
 BENv2_DIR_DICT_PLUTO = {
     "images_lmdb": Path("/home/kaiclasen/bigearthnet-pipeline/artifacts-lmdb/BigEarthNet-V2"),

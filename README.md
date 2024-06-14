@@ -23,6 +23,7 @@ downloaded from the [BigEarthNet website](http://bigearth.net/) or installed as 
 [rs-tensor-encoder](https://github.com/kai-tub/rs-tensor-encoder) repository.
 
 Enter the paths to the following files in the `scripts/train_BENv2.py` script:
+
 - `images_lmdb` (path to the LMDB database)
 - `split_csv` (path to the CSV file containing the split information)
 - `s1_mapping_csv` (path to the CSV file containing the mapping of the patch IDs to the Sentinel-1 image IDs)
@@ -31,10 +32,12 @@ Enter the paths to the following files in the `scripts/train_BENv2.py` script:
 Enter the paths at the top of the `scripts/train_BENv2.py` script in the `BENv2_DIR_DICT` dictionary.
 
 ## Training
+
 Run the training script with `python scripts/train_BENv2.py`. The script will train the model and log the progress to
 wandb.
 
 The following parameters can be adjusted as arguments to the script:
+
 - `--architectures` (default: `resnet18`) The architectures to train. Many architectures from the `timm` library are
   supported.
 - `--seed` (default: `42`) The seed to use for the random number generators.
@@ -43,19 +46,20 @@ The following parameters can be adjusted as arguments to the script:
 - `--bs` (default: `16`) The batch size to use for training.
 - `--workers` (default: `8`) The number of workers to use for the data loader.
 - `--bandconfig` (default: 'all') The band configuration* to use. The following configurations are supported:
-  - `all` 10m and 20m bands from Sentinel-2 and all bands from Sentinel-1 (12 bands in total)
-  - `s2` 10m and 20m bands from Sentinel-2 (10 bands in total)
-  - `s1` all bands from Sentinel-1 (2 bands in total)
-  - `all_full` 10m, 20m, and 60m bands from Sentinel-2 and all bands from Sentinel-1 (14 bands in total) 
-  - `s2_full` 10m, 20m, and 60m bands from Sentinel-2 (12 bands in total)
-  - `s1_full` all bands from Sentinel-1 (2 bands in total, same as `s1`)
+    - `all` 10m and 20m bands from Sentinel-2 and all bands from Sentinel-1 (12 bands in total)
+    - `s2` 10m and 20m bands from Sentinel-2 (10 bands in total)
+    - `s1` all bands from Sentinel-1 (2 bands in total)
+    - `all_full` 10m, 20m, and 60m bands from Sentinel-2 and all bands from Sentinel-1 (14 bands in total)
+    - `s2_full` 10m, 20m, and 60m bands from Sentinel-2 (12 bands in total)
+    - `s1_full` all bands from Sentinel-1 (2 bands in total, same as `s1`)
 - `--use-wandb` or `--no-use-wandb` (default: `False`, same as `--no-use-wandb`) Whether to use wandb for logging. If
-  `--no-use-wandb` is set, the script will not log to wandb but checkpoints are still saved and metrics are printed to 
+  `--no-use-wandb` is set, the script will not log to wandb but checkpoints are still saved and metrics are printed to
   the console.
 - `--upload-to-hub` or `--no-upload-to-hub` (default: `False`, same as `--no-upload-to-hub`) Whether to upload the model
   to the Hugging Face model hub. If `--upload-to-hub` is set, the model will be uploaded to the Hugging Face model hub
-  after training. Note that you have to be logged in to the Hugging Face model hub using `transformers-cli login` for 
-  this to work.
+  after training. Note that you have to be logged in to the Hugging Face model hub using `huggingface-cli login` for
+  this to work. For this you need a Hugging Face account and a token which can be obtained from the Hugging Face
+  website.
 
-*Note: Not all bands from S2 are included in BigEarthNet v2.0. For details, please refer to the 
+*Note: Not all bands from S2 are included in BigEarthNet v2.0. For details, please refer to the
 [BigEarthNet v2.0 paper](LINK TODO).
