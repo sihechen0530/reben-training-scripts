@@ -48,6 +48,7 @@ def main(
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
+        test_run: bool = typer.Option(True, help="Run training with fewer epochs and batches"),
 ):
     # FIXED MODEL PARAMETERS
     num_classes = 19
@@ -145,10 +146,10 @@ def main(
     )
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
     trainer = pl.Trainer(
-        max_epochs=4 if not use_wandb else epochs,
-        limit_train_batches=4 if not use_wandb else None,
-        limit_val_batches=3 if not use_wandb else None,
-        limit_test_batches=5 if not use_wandb else None,
+        max_epochs=4 if test_run else epochs,
+        limit_train_batches=4 if test_run else None,
+        limit_val_batches=3 if test_run else None,
+        limit_test_batches=5 if test_run else None,
         logger=logger,
         accelerator="auto",
         callbacks=[checkpoint_callback, lr_monitor, early_stopping_callback],
