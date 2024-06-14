@@ -20,6 +20,15 @@ __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 BASE_DIR = Path("~/data").expanduser()
 BENv2_DIR = BASE_DIR / "BigEarthNet-V2"
 
+BENv2_DIR_PLUTO = Path("ls /home/kaiclasen/bigearthnet-pipeline/artifacts-result")
+
+BENv2_DIR_DICT_PLUTO = {
+    "images_lmdb": Path("/home/kaiclasen/bigearthnet-pipeline/artifacts-lmdb/BigEarthNet-V2"),
+    "split_csv": BENv2_DIR_PLUTO / "patch_id_split_mapping.csv",
+    "s1_mapping_csv": BENv2_DIR_PLUTO / "patch_id_s1_mapping.csv",
+    "labels_csv": BENv2_DIR_PLUTO / "patch_id_label_mapping.csv",
+}
+
 BENv2_DIR_DICT = {
     "images_lmdb": BENv2_DIR / "BigEarthNet-V2-LMDB",
     "split_csv": BENv2_DIR / "patch_id_split_mapping.csv",
@@ -38,11 +47,22 @@ def main(
         bandconfig: str = typer.Option("all",
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
-        upload_to_hub: bool = typer.Option(True, help="Upload model to Huggingface Hub"),
+        upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
 ):
+    # FIXED MODEL PARAMETERS
+    num_classes = 19
+    img_size = 120
+    dropout = 0.25
+
+    # HUGGINGFACE MODEL PARAMETERS
+    version = "v0.1.1-alpha"
+    hf_entity = "BIFOLD-BigEarthNetv2-0"  # e.g. your username or organisation
+                                          # you can set it to None if it should be uploaded to the logged in user
+
     # set seed
     pl.seed_everything(seed)
     torch.set_float32_matmul_precision("medium")
+
 
     if upload_to_hub:
         assert Path("~/.cache/huggingface/token").expanduser().exists(), "Please login to Huggingface Hub first."
@@ -65,7 +85,12 @@ def main(
             f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands."
         )
     channels = len(bands)
-    data_dirs = resolve_data_dir(BENv2_DIR_DICT, allow_mock=True)
+    if BENv2_DIR_DICT_PLUTO["images_lmdb"].exists():
+        data_dirs = resolve_data_dir(BENv2_DIR_DICT_PLUTO, allow_mock=True)
+        print("Using modified data dirs on Pluto")
+    else:
+        data_dirs = resolve_data_dir(BENv2_DIR_DICT, allow_mock=True)
+        print("Using standard data dirs")
 
     dm = BENv2DataModule(
         data_dirs=data_dirs,
@@ -75,9 +100,6 @@ def main(
     )
 
     # fixed model parameters based on the BigEarthNet v2.0 dataset
-    num_classes = 19
-    img_size = 120
-    dropout = 0.25
     config = ILMConfiguration(
         network_type=ILMType.IMAGE_CLASSIFICATION,
         classes=num_classes,
@@ -123,7 +145,7 @@ def main(
     )
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
     trainer = pl.Trainer(
-        max_epochs=2 if not use_wandb else epochs,
+        max_epochs=4 if not use_wandb else epochs,
         limit_train_batches=4 if not use_wandb else None,
         limit_val_batches=3 if not use_wandb else None,
         limit_test_batches=5 if not use_wandb else None,
@@ -138,11 +160,12 @@ def main(
     print("=== Training finished ===")
     if upload_to_hub:
         print("=== Uploading model to Huggingface Hub ===")
-        version = "v0.1.1-alpha"
         model_name = f"BENv2-{architecture}-{seed}-{bandconfig}-{version}"
         print(f"Uploading model as {model_name}")
         model.save_pretrained(f"hf_models/{model_name}", config=config)
-        model.push_to_hub(model_name, commit_message=f"Upload {model_name}")
+        push_path = f"{hf_entity}/{model_name}" if hf_entity else model_name
+        print(f"Pushing to {push_path}")
+        model.push_to_hub(push_path, commit_message=f"Upload {model_name}")
         print("=== Done ===")
     else:
         print("=== Skipping upload to Huggingface Hub ===")

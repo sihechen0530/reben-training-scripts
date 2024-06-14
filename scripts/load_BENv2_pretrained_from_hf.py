@@ -41,7 +41,7 @@ def main(
 
     trainer = pl.Trainer(
         accelerator="auto",
-        limit_test_batches=20,
+        limit_test_batches=5,
     )
 
     trainer.test(model, datamodule=dm)
