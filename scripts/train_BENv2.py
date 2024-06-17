@@ -53,7 +53,7 @@ def main(
     # FIXED MODEL PARAMETERS
     num_classes = 19
     img_size = 120
-    dropout = 0.25
+    dropout = 0.375
 
     # HUGGINGFACE MODEL PARAMETERS
     version = "v0.1.1"
@@ -126,6 +126,8 @@ def main(
             "batch_size": bs,
             "workers": workers,
             "channels": channels,
+            "dropout": dropout,
+            "version": version,
         }
     )
 
