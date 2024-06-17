@@ -56,7 +56,7 @@ def main(
     dropout = 0.25
 
     # HUGGINGFACE MODEL PARAMETERS
-    version = "v0.1.1-alpha"
+    version = "v0.1.1"
     hf_entity = "BIFOLD-BigEarthNetv2-0"  # e.g. your username or organisation
                                           # you can set it to None if it should be uploaded to the logged in user
 
