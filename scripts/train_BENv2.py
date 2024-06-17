@@ -14,6 +14,7 @@ from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 from lightning.pytorch.loggers import WandbLogger
 
 from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
+from ben_publication.mock_dm import MockDataModule
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -114,12 +115,23 @@ def main(
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
     print(f"Using data directories for {hostname}")
 
-    dm = BENv2DataModule(
-        data_dirs=data_dirs,
-        batch_size=bs,
-        num_workers_dataloader=workers,
-        img_size=(channels, 120, 120),
-    )
+    use_mock_data = True
+    if use_mock_data:
+        dm = MockDataModule(
+            dims=(channels, img_size, img_size),
+            clss=num_classes,
+            train_length=200_000,
+            val_length=120_000,
+            test_length=120_000,
+            bs=bs,
+        )
+    else:
+        dm = BENv2DataModule(
+            data_dirs=data_dirs,
+            batch_size=bs,
+            num_workers_dataloader=workers,
+            img_size=(channels, img_size, img_size),
+        )
 
     # fixed model parameters based on the BigEarthNet v2.0 dataset
     config = ILMConfiguration(
