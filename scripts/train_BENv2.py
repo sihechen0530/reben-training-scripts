@@ -124,6 +124,7 @@ def main(
             val_length=120_000,
             test_length=120_000,
             bs=bs,
+            num_workers=workers,
         )
     else:
         dm = BENv2DataModule(
