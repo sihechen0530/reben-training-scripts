@@ -1,7 +1,7 @@
 """
 This is an example script for supervised image classification using the BigEarthNet v2.0 dataset.
 """
-
+import socket
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -17,24 +17,49 @@ from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
-BASE_DIR = Path("~/data").expanduser()
-BENv2_DIR = BASE_DIR / "BigEarthNet-V2"
+BENv2_DIR_MARS = Path("/data/kaiclasen")
+BENv2_DIR_DICT_MARS = {
+    "images_lmdb": BENv2_DIR_MARS / "BENv2.lmdb",
+    "split_csv": BENv2_DIR_MARS / "patch_id_split_mapping.csv",
+    "s1_mapping_csv": BENv2_DIR_MARS / "patch_id_s1_mapping.csv",
+    "labels_csv": BENv2_DIR_MARS / "patch_id_label_mapping.csv",
+}
 
-BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline/artifacts-result")
+BENv2_DIR_ERDE = Path("/faststorage/BigEarthNet-V2")
+BENv2_DIR_DICT_ERDE = {
+    "images_lmdb": BENv2_DIR_ERDE / "BigEarthNet-V2-LMDB",
+    "split_csv": BENv2_DIR_ERDE / "patch_id_split_mapping.csv",
+    "s1_mapping_csv": BENv2_DIR_ERDE / "patch_id_s1_mapping.csv",
+    "labels_csv": BENv2_DIR_ERDE / "patch_id_label_mapping.csv",
+}
 
+BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline")
 BENv2_DIR_DICT_PLUTO = {
-    "images_lmdb": Path("/home/kaiclasen/bigearthnet-pipeline/artifacts-lmdb/BigEarthNet-V2"),
-    "split_csv": BENv2_DIR_PLUTO / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR_PLUTO / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_PLUTO / "patch_id_label_mapping.csv",
+    "images_lmdb": BENv2_DIR_PLUTO / "artifacts-lmdb" / "BigEarthNet-V2",
+    "split_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_split_mapping.csv",
+    "s1_mapping_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_s1_mapping.csv",
+    "labels_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_label_mapping.csv",
 }
 
-BENv2_DIR_DICT = {
-    "images_lmdb": BENv2_DIR / "BigEarthNet-V2-LMDB",
-    "split_csv": BENv2_DIR / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR / "patch_id_label_mapping.csv",
+BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
+BENv2_DIR_DICT_DEFAULT = {
+    "images_lmdb": BENv2_DIR_DEFAULT / "BigEarthNet-V2-LMDB",
+    "split_csv": BENv2_DIR_DEFAULT / "patch_id_split_mapping.csv",
+    "s1_mapping_csv": BENv2_DIR_DEFAULT / "patch_id_s1_mapping.csv",
+    "labels_csv": BENv2_DIR_DEFAULT / "patch_id_label_mapping.csv",
 }
+
+BENv2_DIR_DICTS = {
+    'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_PLUTO,
+    'erde': BENv2_DIR_DICT_ERDE,
+    'pluto': BENv2_DIR_DICT_PLUTO,
+    'default': BENv2_DIR_DICT_DEFAULT,
+}
+
+
+def _get_benv2_dir_dict() -> tuple[str, dict]:
+    hostname = socket.gethostname()
+    return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
 def main(
@@ -58,12 +83,11 @@ def main(
     # HUGGINGFACE MODEL PARAMETERS
     version = "v0.1.1"
     hf_entity = "BIFOLD-BigEarthNetv2-0"  # e.g. your username or organisation
-                                          # you can set it to None if it should be uploaded to the logged in user
+    # you can set it to None if it should be uploaded to the logged in user
 
     # set seed
     pl.seed_everything(seed)
     torch.set_float32_matmul_precision("medium")
-
 
     if upload_to_hub:
         assert Path("~/.cache/huggingface/token").expanduser().exists(), "Please login to Huggingface Hub first."
@@ -86,12 +110,9 @@ def main(
             f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands."
         )
     channels = len(bands)
-    if BENv2_DIR_DICT_PLUTO["images_lmdb"].exists():
-        data_dirs = resolve_data_dir(BENv2_DIR_DICT_PLUTO, allow_mock=True)
-        print("Using modified data dirs on Pluto")
-    else:
-        data_dirs = resolve_data_dir(BENv2_DIR_DICT, allow_mock=True)
-        print("Using standard data dirs")
+    hostname, data_dirs = _get_benv2_dir_dict()
+    data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
+    print(f"Using data directories for {hostname}")
 
     dm = BENv2DataModule(
         data_dirs=data_dirs,
