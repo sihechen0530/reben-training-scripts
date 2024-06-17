@@ -71,6 +71,10 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         x_hat = self.model(x)
         loss = self.loss(x_hat, y)
         self.log("train/loss", loss)
+        if torch.cuda.is_available():
+            current_gpu = torch.cuda.current_device()
+            current_gpu_mem_mb = torch.cuda.memory_allocated(current_gpu) / 1024 ** 2
+            self.log("train/GPU_memory_MB", current_gpu_mem_mb)
         return {"loss": loss}
 
     def configure_optimizers(self):
