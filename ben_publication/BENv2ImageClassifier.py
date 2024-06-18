@@ -116,27 +116,32 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
 
     def on_validation_epoch_end(self):
         print(f"[START OF MET CALC] VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
-        avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
-        self.log("val/loss", avg_loss)
+        calc_metrics = False
+        if calc_metrics:
+            avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
+            self.log("val/loss", avg_loss)
 
-        preds = torch.cat([x["outputs"] for x in self.val_output_list])
-        labels = torch.cat([x["labels"] for x in self.val_output_list]).long()
-        metrics_macro = self.val_metrics_macro(preds, labels)
-        self.log_dict(metrics_macro)
-        metrics_micro = self.val_metrics_micro(preds, labels)
-        self.log_dict(metrics_micro)
-        metrics_samples = self.val_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
-        metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
-        self.log_dict(metrics_samples)
+            preds = torch.cat([x["outputs"] for x in self.val_output_list])
+            labels = torch.cat([x["labels"] for x in self.val_output_list]).long()
+            metrics_macro = self.val_metrics_macro(preds, labels)
+            self.log_dict(metrics_macro)
+            metrics_micro = self.val_metrics_micro(preds, labels)
+            self.log_dict(metrics_micro)
+            metrics_samples = self.val_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
+            metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
+            self.log_dict(metrics_samples)
 
-        # get class names from datamodule
-        class_names = NEW_LABELS
-        metrics_class = self.val_metrics_class(preds, labels)
-        classwise_acc = {
-            f"val/ClasswiseAccuracy/{class_names[i]}": metrics_class["val/MultilabelAccuracy_class"][i]
-            for i in range(len(class_names))
-        }
-        self.log_dict(classwise_acc)
+            # get class names from datamodule
+            class_names = NEW_LABELS
+            metrics_class = self.val_metrics_class(preds, labels)
+            classwise_acc = {
+                f"val/ClasswiseAccuracy/{class_names[i]}": metrics_class["val/MultilabelAccuracy_class"][i]
+                for i in range(len(class_names))
+            }
+            self.log_dict(classwise_acc)
+        else:
+            print("Skipping metric calculation")
+            self.log("val/MultilabelAveragePrecision_macro", 1/(self.current_epoch+1))
         print(f"[END OF MET CALC]   VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
 
     def test_step(self, batch, batch_idx):
