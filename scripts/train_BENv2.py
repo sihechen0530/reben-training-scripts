@@ -120,9 +120,9 @@ def main(
         dm = MockDataModule(
             dims=(channels, img_size, img_size),
             clss=num_classes,
-            train_length=200_000,
-            val_length=120_000,
-            test_length=120_000,
+            train_length=20_000,
+            val_length=12_000,
+            test_length=12_000,
             bs=bs,
             num_workers=workers,
         )
