@@ -116,39 +116,36 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
 
     def on_validation_epoch_end(self):
         print(f"[START OF MET CALC] VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
-        calc_metrics = True
-        if calc_metrics:
-            avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
-            self.log("val/loss", avg_loss)
 
-            preds = torch.cat([x["outputs"] for x in self.val_output_list])
-            labels = torch.cat([x["labels"] for x in self.val_output_list]).long()
+        avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
+        self.log("val/loss", avg_loss)
 
-            metrics_macro = self.val_metrics_macro(preds, labels)
-            self.log_dict(metrics_macro)
-            self.val_metrics_macro.reset()
+        preds = torch.cat([x["outputs"] for x in self.val_output_list])
+        labels = torch.cat([x["labels"] for x in self.val_output_list]).long()
 
-            metrics_micro = self.val_metrics_micro(preds, labels)
-            self.log_dict(metrics_micro)
-            self.val_metrics_micro.reset()
+        metrics_macro = self.val_metrics_macro(preds, labels)
+        self.log_dict(metrics_macro)
+        self.val_metrics_macro.reset()
 
-            metrics_samples = self.val_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
-            metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
-            self.log_dict(metrics_samples)
-            self.val_metrics_samples.reset()
+        metrics_micro = self.val_metrics_micro(preds, labels)
+        self.log_dict(metrics_micro)
+        self.val_metrics_micro.reset()
 
-            # get class names from datamodule
-            class_names = NEW_LABELS
-            metrics_class = self.val_metrics_class(preds, labels)
-            classwise_acc = {
-                f"val/ClasswiseAccuracy/{class_names[i]}": metrics_class["val/MultilabelAccuracy_class"][i]
-                for i in range(len(class_names))
-            }
-            self.log_dict(classwise_acc)
-            self.val_metrics_class.reset()
-        else:
-            print("Skipping metric calculation")
-            self.log("val/MultilabelAveragePrecision_macro", 1/(self.current_epoch+1))
+        metrics_samples = self.val_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
+        metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
+        self.log_dict(metrics_samples)
+        self.val_metrics_samples.reset()
+
+        # get class names from datamodule
+        class_names = NEW_LABELS
+        metrics_class = self.val_metrics_class(preds, labels)
+        classwise_acc = {
+            f"val/ClasswiseAccuracy/{class_names[i]}": metrics_class["val/MultilabelAccuracy_class"][i]
+            for i in range(len(class_names))
+        }
+        self.log_dict(classwise_acc)
+        self.val_metrics_class.reset()
+
         print(f"[END OF MET CALC]   VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
 
     def test_step(self, batch, batch_idx):
@@ -164,13 +161,19 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
 
         preds = torch.cat([x["outputs"] for x in self.test_output_list])
         labels = torch.cat([x["labels"] for x in self.test_output_list]).long()
+
         metrics_macro = self.test_metrics_macro(preds, labels)
         self.log_dict(metrics_macro)
+        self.test_metrics_macro.reset()
+
         metrics_micro = self.test_metrics_micro(preds, labels)
         self.log_dict(metrics_micro)
+        self.test_metrics_micro.reset()
+
         metrics_samples = self.test_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
         metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
         self.log_dict(metrics_samples)
+        self.test_metrics_samples.reset()
 
         class_names = NEW_LABELS
         metrics_class = self.test_metrics_class(preds, labels)
@@ -179,6 +182,8 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
             for i in range(len(class_names))
         }
         self.log_dict(classwise_acc)
+        self.test_metrics_class.reset()
+        
         print(f"[END OF MET CALC TEST]   VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
 
     def forward(self, batch):
