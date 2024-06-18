@@ -10,7 +10,6 @@ python = ">=3.10, <3.12"
 configilm = { extras = ["full"], version = "^0.6.3" }
 wandb = "^0.17.1"
 numpy = "^1.26.4"
-torchmetrics = "~1.3.2"
 
 [build-system]
 requires = ["poetry-core"]

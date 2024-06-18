@@ -108,7 +108,7 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         x, y = batch
         x_hat = self.model(x)
         loss = self.loss(x_hat, y)
-        self.val_output_list += [{"loss": loss.cpu(), "outputs": x_hat, "labels": y}]
+        self.val_output_list += [{"loss": loss.detach(), "outputs": x_hat.detach(), "labels": y.detach()}]
 
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
