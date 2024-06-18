@@ -76,6 +76,8 @@ def main(
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
         bs: int = typer.Option(16, help="Batch size"),
+        drop_rate: float = typer.Option(0.375, help="Dropout rate"),
+        drop_path_rate: float = typer.Option(0.0, help="Drop path rate"),
         workers: int = typer.Option(8, help="Number of workers"),
         bandconfig: str = typer.Option("all",
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
@@ -86,8 +88,6 @@ def main(
     # FIXED MODEL PARAMETERS
     num_classes = 19
     img_size = 120
-    dropout = 0.375
-    drop_path_rate = 0.
 
     # HUGGINGFACE MODEL PARAMETERS
     version = "v0.1.1"

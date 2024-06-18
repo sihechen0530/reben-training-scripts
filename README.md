@@ -45,6 +45,8 @@ The following parameters can be adjusted as arguments to the script:
 - `--lr` (default: `1e-3`) The learning rate to use for training for the optimizers `AdamW`.
 - `--epochs` (default: `100`) The number of epochs to train for.
 - `--bs` (default: `16`) The batch size to use for training.
+- `--drop_rate` (default: `0.375`) The dropout rate to use for the models.
+- `--drop_path_rate` (default: `0.0`) The drop path rate to use for the models.
 - `--workers` (default: `8`) The number of workers to use for the data loader.
 - `--bandconfig` (default: 'all') The band configuration* to use. The following configurations are supported:
     - `all` 10m and 20m bands from Sentinel-2 and all bands from Sentinel-1 (12 bands in total)
