@@ -7,18 +7,17 @@ from typing import List
 import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
-from configilm import ConfigILM
 from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import NEW_LABELS
 from configilm.extra.CustomTorchClasses import LinearWarmupCosineAnnealingLR
 from configilm.metrics import get_classification_metric_collection
-from huggingface_hub import PyTorchModelHubMixin
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
-class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
+# class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
+class BENv2ImageEncoder(pl.LightningModule):
     """
     Wrapper around a pytorch module, allowing this module to be used in automatic
     training with pytorch lightning.
@@ -39,7 +38,7 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         assert config.classes == 19
         self.mock_params = torch.nn.Linear(config.classes, config.classes)
         self.model = lambda x: self.mock_params(torch.rand((x.shape[0], config.classes)).to(x.device))
-        #self.model = ConfigILM.ConfigILM(config)
+        # self.model = ConfigILM.ConfigILM(config)
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
         self.loss = torch.nn.BCEWithLogitsLoss()
@@ -113,7 +112,6 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
         self.val_output_list = []
-
 
     def on_validation_epoch_end(self):
         avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
