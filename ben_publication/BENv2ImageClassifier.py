@@ -114,6 +114,7 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         super().on_validation_epoch_start()
         self.val_output_list = []
 
+
     def on_validation_epoch_end(self):
         avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
         self.log("val/loss", avg_loss)
