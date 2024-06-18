@@ -89,7 +89,6 @@ def main(
     # set seed
     pl.seed_everything(seed)
     torch.set_float32_matmul_precision("medium")
-    torch.cuda.set_per_process_memory_fraction(2/80)
 
     if upload_to_hub:
         assert Path("~/.cache/huggingface/token").expanduser().exists(), "Please login to Huggingface Hub first."

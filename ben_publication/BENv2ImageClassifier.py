@@ -7,17 +7,18 @@ from typing import List
 import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
+from configilm import ConfigILM
 from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import NEW_LABELS
 from configilm.extra.CustomTorchClasses import LinearWarmupCosineAnnealingLR
 from configilm.metrics import get_classification_metric_collection
+from huggingface_hub import PyTorchModelHubMixin
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
-# class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
-class BENv2ImageEncoder(pl.LightningModule):
+class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
     """
     Wrapper around a pytorch module, allowing this module to be used in automatic
     training with pytorch lightning.
@@ -114,6 +115,7 @@ class BENv2ImageEncoder(pl.LightningModule):
         self.val_output_list = []
 
     def on_validation_epoch_end(self):
+        print(f"[START OF EPOCH] VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
         avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
         self.log("val/loss", avg_loss)
 
@@ -135,6 +137,7 @@ class BENv2ImageEncoder(pl.LightningModule):
             for i in range(len(class_names))
         }
         self.log_dict(classwise_acc)
+        print(f"[END OF EPOCH]   VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
 
     def test_step(self, batch, batch_idx):
         x, y = batch
