@@ -3,13 +3,14 @@
 ## pre-requisites
 
 We recommend using the pyproject.toml file to install the required dependencies based on
-[Poetry](https://python-poetry.org/).
+[Poetry](https://python-poetry.org/). For use with Poetry, CUDA 12.x is required.
 
 Otherwise, the following dependencies are required:
 
 - Python 3.10 or higher (install with `sudo apt install python3.10`)
 - configilm[full] (install with `pip install configilm[full]`)
 - wandb (install with `pip install wandb`)
+- numpy 1.x (install with `pip install numpy~=1.26.4`)
 
 Please also create an account on [wandb](https://wandb.ai/) and login using `wandb login`. This is required to log the
 training progress.
@@ -60,6 +61,34 @@ The following parameters can be adjusted as arguments to the script:
   after training. Note that you have to be logged in to the Hugging Face model hub using `huggingface-cli login` for
   this to work. For this you need a Hugging Face account and a token which can be obtained from the Hugging Face
   website.
+
+The full command to train the resnet50 model as described in the BigEarthNet v2.0 paper with all bands from Sentinel-2 
+is as follows:
+
+`python train_BENv2.py --no-test-run --use-wandb --upload-to-hub --architecture=resnet50 --bandconfig=s2 --bs=512 --lr=0.001`
+
+This command
+ - used the full dataset instead of only a few batches to test
+ - logged the training progress to wandb
+ - uploaded the model to the Hugging Face model hub after training and testing
+ - used the resnet50 architecture
+ - used only the Sentinel-2 bands
+ - used a batch size of 512
+ - used a learning rate of 0.001
+
+The trained model will be saved in the `models` directory and on huggingface. It can be loaded using
+```python
+from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
+
+model = BENv2ImageEncoder.from_pretrained("<entity>/<model-name>")
+```
+e.g.
+```python
+from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
+
+model = BENv2ImageEncoder.from_pretrained("BIFOLD-BigEarthNetv2-0/BENv2-resnet50-42-s2-v0.1.1")
+```
+Note, that the model configuration is automatically loaded from the Hugging Face model hub.
 
 *Note: Not all bands from S2 are included in BigEarthNet v2.0. For details, please refer to the
 [BigEarthNet v2.0 paper](LINK TODO).
