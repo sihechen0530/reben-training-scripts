@@ -41,6 +41,14 @@ BENv2_DIR_DICT_PLUTO = {
     "labels_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_label_mapping.csv",
 }
 
+BENv2_DIR_PLUTO_BACKUP = Path("/home/leonard/data/BigEarthNet-V2")
+BENv2_DIR_DICT_PLUTO_BACKUP = {
+    "images_lmdb": BENv2_DIR_PLUTO_BACKUP / "BigEarthNet-V2-LMDB",
+    "split_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_split_mapping_withCloudSnow.csv",
+    "s1_mapping_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_s1_mapping.csv",
+    "labels_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_label_mapping_withCloudSnow.csv",
+}
+
 BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BigEarthNet-V2-LMDB",
@@ -52,7 +60,7 @@ BENv2_DIR_DICT_DEFAULT = {
 BENv2_DIR_DICTS = {
     'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_PLUTO,
     'erde': BENv2_DIR_DICT_ERDE,
-    'pluto': BENv2_DIR_DICT_PLUTO,
+    'pluto': BENv2_DIR_DICT_PLUTO_BACKUP,
     'default': BENv2_DIR_DICT_DEFAULT,
 }
 
