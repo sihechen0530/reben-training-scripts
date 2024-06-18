@@ -116,7 +116,7 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
 
     def on_validation_epoch_end(self):
         print(f"[START OF MET CALC] VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
-        calc_metrics = False
+        calc_metrics = True
         if calc_metrics:
             avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
             self.log("val/loss", avg_loss)
