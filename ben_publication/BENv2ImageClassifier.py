@@ -113,7 +113,6 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         self.val_output_list = []
 
     def on_validation_epoch_end(self):
-        print(f"[START OF MET CALC] VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
 
         avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
         self.log("val/loss", avg_loss)
@@ -144,8 +143,6 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         self.log_dict(classwise_acc)
         self.val_metrics_class.reset()
 
-        print(f"[END OF MET CALC]   VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
-
     def test_step(self, batch, batch_idx):
         x, y = batch
         x_hat = self.model(x)
@@ -153,7 +150,6 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         self.test_output_list += [{"loss": loss, "outputs": x_hat, "labels": y}]
 
     def on_test_epoch_end(self):
-        print(f"[START OF MET CALC TEST] VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
         avg_loss = torch.stack([x["loss"] for x in self.test_output_list]).mean()
         self.log("test/loss", avg_loss)
 
@@ -181,8 +177,6 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         }
         self.log_dict(classwise_acc)
         self.test_metrics_class.reset()
-
-        print(f"[END OF MET CALC TEST]   VRAM usage: {torch.cuda.memory_allocated() / 1024 ** 2} MB")
 
     def forward(self, batch):
         # because we are a wrapper, we call the inner function manually
