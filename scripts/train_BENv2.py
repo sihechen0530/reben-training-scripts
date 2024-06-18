@@ -60,7 +60,7 @@ BENv2_DIR_DICT_DEFAULT = {
 BENv2_DIR_DICTS = {
     'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_PLUTO,
     'erde': BENv2_DIR_DICT_ERDE,
-    'pluto': BENv2_DIR_DICT_PLUTO_BACKUP,
+    'pluto': BENv2_DIR_DICT_PLUTO,
     'default': BENv2_DIR_DICT_DEFAULT,
 }
 
@@ -87,6 +87,7 @@ def main(
     num_classes = 19
     img_size = 120
     dropout = 0.375
+    drop_path_rate = 0.
 
     # HUGGINGFACE MODEL PARAMETERS
     version = "v0.1.1"
@@ -135,6 +136,7 @@ def main(
         classes=num_classes,
         image_size=img_size,
         drop_rate=dropout,
+        drop_path_rate=drop_path_rate,
         timm_model_name=architecture,
         channels=channels,
     )
@@ -156,6 +158,7 @@ def main(
             "workers": workers,
             "channels": channels,
             "dropout": dropout,
+            "drop_path_rate": drop_path_rate,
             "version": version,
         }
     )

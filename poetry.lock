@@ -394,13 +394,12 @@ files = [
 
 [[package]]
 name = "configilm"
-version = "0.6.3"
+version = "0.6.4"
 description = "A state-of-the-art tool for Python developers seeking to rapidly and iteratively develop vision and language models within the [`pytorch`](https://pytorch.org/) framework"
 optional = false
 python-versions = "<3.12,>=3.9"
 files = [
-    {file = "configilm-0.6.3-py3-none-any.whl", hash = "sha256:75a24275b3a8ce7df53ddb5103433afbd3accbcf81b283f623c6710fd857ad89"},
-    {file = "configilm-0.6.3.tar.gz", hash = "sha256:ca67ed2c7323d3f62aedd256c1c86bc8122346e80b1abf5fceffc6738a58c0ee"},
+    {file = "configilm-0.6.4-py3-none-any.whl", hash = "sha256:e0eeeb1c41b95b9748659fe1278e333ab5751288e4a192acbb1d0edfed64f60b"},
 ]
 
 [package.dependencies]
