@@ -115,7 +115,7 @@ def main(
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
     print(f"Using data directories for {hostname}")
 
-    use_mock_data = True
+    use_mock_data = False
     if use_mock_data:
         dm = MockDataModule(
             dims=(channels, img_size, img_size),
