@@ -135,7 +135,7 @@ def main(
         network_type=ILMType.IMAGE_CLASSIFICATION,
         classes=num_classes,
         image_size=img_size,
-        drop_rate=dropout,
+        drop_rate=drop_rate,
         drop_path_rate=drop_path_rate,
         timm_model_name=architecture,
         channels=channels,
@@ -157,7 +157,7 @@ def main(
             "batch_size": bs,
             "workers": workers,
             "channels": channels,
-            "dropout": dropout,
+            "dropout": drop_rate,
             "drop_path_rate": drop_path_rate,
             "version": version,
         }
