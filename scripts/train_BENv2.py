@@ -58,7 +58,7 @@ BENv2_DIR_DICT_DEFAULT = {
 }
 
 BENv2_DIR_DICTS = {
-    'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_PLUTO,
+    'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_MARS,
     'erde': BENv2_DIR_DICT_ERDE,
     'pluto': BENv2_DIR_DICT_PLUTO,
     'pluto-backup': BENv2_DIR_DICT_PLUTO_BACKUP,
@@ -100,7 +100,7 @@ def main(
     # you can set it to None if it should be uploaded to the logged in user
 
     # set seed
-    pl.seed_everything(seed)
+    pl.seed_everything(seed, workers=True)
     torch.set_float32_matmul_precision("medium")
 
     if upload_to_hub:
