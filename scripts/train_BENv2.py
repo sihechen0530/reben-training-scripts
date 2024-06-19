@@ -42,14 +42,6 @@ BENv2_DIR_DICT_PLUTO = {
     "labels_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_label_mapping.csv",
 }
 
-BENv2_DIR_PLUTO_BACKUP = Path("/home/leonard/data/BigEarthNet-V2")
-BENv2_DIR_DICT_PLUTO_BACKUP = {
-    "images_lmdb": BENv2_DIR_PLUTO_BACKUP / "BigEarthNet-V2-LMDB",
-    "split_csv": BENv2_DIR_PLUTO_BACKUP / "backup" / "patch_id_split_mapping_withCloudSnow.csv",
-    "s1_mapping_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_PLUTO_BACKUP / "backup" / "patch_id_label_mapping_withCloudSnow.csv",
-}
-
 BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BigEarthNet-V2-LMDB",
@@ -62,15 +54,12 @@ BENv2_DIR_DICTS = {
     'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_MARS,
     'erde': BENv2_DIR_DICT_ERDE,
     'pluto': BENv2_DIR_DICT_PLUTO,
-    'pluto-backup': BENv2_DIR_DICT_PLUTO_BACKUP,
     'default': BENv2_DIR_DICT_DEFAULT,
 }
 
 
-def _get_benv2_dir_dict(backup: bool = False) -> tuple[str, dict]:
+def _get_benv2_dir_dict() -> tuple[str, dict]:
     hostname = socket.gethostname()
-    if backup:
-        return hostname, BENv2_DIR_DICTS.get(hostname + '-backup', BENv2_DIR_DICT_DEFAULT)
     return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
@@ -88,8 +77,7 @@ def main(
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
-        test_run: bool = typer.Option(False, help="Run training with fewer epochs and batches"),
-        use_backup_data: bool = typer.Option(False, help="Use backup data directory"),
+        test_run: bool = typer.Option(True, help="Run training with fewer epochs and batches"),
 ):
     # FIXED MODEL PARAMETERS
     num_classes = 19
@@ -125,7 +113,7 @@ def main(
             f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands."
         )
     channels = len(bands)
-    hostname, data_dirs = _get_benv2_dir_dict(use_backup_data)
+    hostname, data_dirs = _get_benv2_dir_dict()
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
     print(f"Using data directories for {hostname}")
 
@@ -135,8 +123,14 @@ def main(
         num_workers_dataloader=workers,
         img_size=(channels, img_size, img_size),
     )
-    mean = dm.train_transform.transforms[5].mean
-    std = dm.train_transform.transforms[5].std
+    # get the norm_transform to extract mean/std from there
+    # we can do this because configilm used default transforms that include normalization with the correct values
+    # for the BigEarthNet v2.0 dataset in the BENv2DataModule
+    norm_transform = [x for x in dm.train_transform.transforms if isinstance(x, transforms.Normalize)]
+    assert len(norm_transform) == 1, "Expected exactly one normalization transform"
+    norm_transform = norm_transform[0]
+    mean = norm_transform.mean
+    std = norm_transform.std
     train_transforms = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),
