@@ -78,7 +78,7 @@ def main(
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
-        bs: int = typer.Option(16, help="Batch size"),
+        bs: int = typer.Option(32, help="Batch size"),
         drop_rate: float = typer.Option(0.375, help="Dropout rate"),
         drop_path_rate: float = typer.Option(0.0, help="Drop path rate"),
         warmup: int = typer.Option(-1, help="Warmup steps, set to -1 for automatic calculation"),
@@ -87,7 +87,7 @@ def main(
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
-        test_run: bool = typer.Option(True, help="Run training with fewer epochs and batches"),
+        test_run: bool = typer.Option(False, help="Run training with fewer epochs and batches"),
         use_backup_data: bool = typer.Option(False, help="Use backup data directory"),
 ):
     # FIXED MODEL PARAMETERS
