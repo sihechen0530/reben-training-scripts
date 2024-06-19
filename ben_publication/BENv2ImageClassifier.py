@@ -2,7 +2,7 @@
 This is a script for supervised image classification using the BigEarthNet v2.0 dataset.
 """
 # import packages
-from typing import List
+from typing import List, Optional
 
 import lightning.pytorch as pl
 import torch
@@ -31,9 +31,11 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
             self,
             config: ILMConfiguration,
             lr: float = 1e-3,
+            warmup: Optional[int] = None,
     ):
         super().__init__()
         self.lr = lr
+        self.warmup = warmup
         self.config = config
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
         assert config.classes == 19
@@ -84,9 +86,13 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
         max_intervals = int(
             self.trainer.max_epochs * len(self.trainer.datamodule.train_ds) / self.trainer.datamodule.batch_size
         )
-        warmup = 10000 if max_intervals > 10000 else 100 if max_intervals > 100 else 0
+        if self.warmup is not None:
+            print(f"Overwriting warmup with {self.warmup}")
+            warmup = self.warmup
+        else:
+            warmup = 10000 if max_intervals > 10000 else 100 if max_intervals > 100 else 0
 
-        print(f"Optimizing for {max_intervals} steps with warmup for {warmup} steps")
+        print(f"Optimizing for up to {max_intervals} steps with warmup for {warmup} steps")
 
         lr_scheduler = {
             "scheduler": LinearWarmupCosineAnnealingLR(

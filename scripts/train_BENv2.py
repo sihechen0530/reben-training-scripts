@@ -61,12 +61,15 @@ BENv2_DIR_DICTS = {
     'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_PLUTO,
     'erde': BENv2_DIR_DICT_ERDE,
     'pluto': BENv2_DIR_DICT_PLUTO,
+    'pluto-backup': BENv2_DIR_DICT_PLUTO_BACKUP,
     'default': BENv2_DIR_DICT_DEFAULT,
 }
 
 
-def _get_benv2_dir_dict() -> tuple[str, dict]:
+def _get_benv2_dir_dict(backup: bool = False) -> tuple[str, dict]:
     hostname = socket.gethostname()
+    if backup:
+        return hostname, BENv2_DIR_DICTS.get(hostname + '-backup', BENv2_DIR_DICT_DEFAULT)
     return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
@@ -78,12 +81,14 @@ def main(
         bs: int = typer.Option(16, help="Batch size"),
         drop_rate: float = typer.Option(0.375, help="Dropout rate"),
         drop_path_rate: float = typer.Option(0.0, help="Drop path rate"),
+        warmup: int = typer.Option(-1, help="Warmup steps, set to -1 for automatic calculation"),
         workers: int = typer.Option(8, help="Number of workers"),
         bandconfig: str = typer.Option("all",
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
         test_run: bool = typer.Option(True, help="Run training with fewer epochs and batches"),
+        use_backup_data: bool = typer.Option(False, help="Use backup data directory"),
 ):
     # FIXED MODEL PARAMETERS
     num_classes = 19
@@ -119,7 +124,7 @@ def main(
             f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands."
         )
     channels = len(bands)
-    hostname, data_dirs = _get_benv2_dir_dict()
+    hostname, data_dirs = _get_benv2_dir_dict(use_backup_data)
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
     print(f"Using data directories for {hostname}")
 
@@ -140,8 +145,10 @@ def main(
         timm_model_name=architecture,
         channels=channels,
     )
+    warmup = None if warmup == -1 else warmup
+    assert warmup is None or warmup > 0, "Warmup steps must be positive or -1 for automatic calculation"
 
-    model = BENv2ImageEncoder(config, lr=lr)
+    model = BENv2ImageEncoder(config, lr=lr, warmup=warmup)
 
     # we assume, that we are already logged in to wandb
     if use_wandb:
