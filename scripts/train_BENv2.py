@@ -166,6 +166,8 @@ def main(
             "channels": channels,
             "dropout": drop_rate,
             "drop_path_rate": drop_path_rate,
+            "bandconfig": bandconfig,
+            "warmup": warmup,
             "version": version,
         }
     )
