@@ -44,9 +44,9 @@ BENv2_DIR_DICT_PLUTO = {
 BENv2_DIR_PLUTO_BACKUP = Path("/home/leonard/data/BigEarthNet-V2")
 BENv2_DIR_DICT_PLUTO_BACKUP = {
     "images_lmdb": BENv2_DIR_PLUTO_BACKUP / "BigEarthNet-V2-LMDB",
-    "split_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_split_mapping_withCloudSnow.csv",
+    "split_csv": BENv2_DIR_PLUTO_BACKUP / "backup" / "patch_id_split_mapping_withCloudSnow.csv",
     "s1_mapping_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_PLUTO_BACKUP / "patch_id_label_mapping_withCloudSnow.csv",
+    "labels_csv": BENv2_DIR_PLUTO_BACKUP / "backup" / "patch_id_label_mapping_withCloudSnow.csv",
 }
 
 BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
