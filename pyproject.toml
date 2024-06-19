@@ -11,14 +11,14 @@ configilm = { extras = ["full"], version = "^0.6.3" }
 wandb = "^0.17.1"
 numpy = "^1.26.4"
 # torch = "2.2.2"
-torch = { version = "2.2.2+cu118", source = "pytorch-gpu-src" }
-torchvision = { version = "0.17.2+cu118", source = "pytorch-gpu-src" }
-lightning = "2.2.1"
+# torch = { version = "2.2.2+cu118", source = "pytorch-gpu-src" }
+# torchvision = { version = "0.17.2+cu118", source = "pytorch-gpu-src" }
+# lightning = "2.2.1"
 
-[[tool.poetry.source]]
-name = "pytorch-gpu-src"
-url = "https://download.pytorch.org/whl/cu118"
-priority = "explicit"
+# [[tool.poetry.source]]
+# name = "pytorch-gpu-src"
+# url = "https://download.pytorch.org/whl/cu118"
+# priority = "explicit"
 
 [build-system]
 requires = ["poetry-core"]

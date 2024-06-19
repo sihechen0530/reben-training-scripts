@@ -12,6 +12,7 @@ from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import STANDARD_BANDS, resolve_data_dir
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 from lightning.pytorch.loggers import WandbLogger
+from torchvision import transforms
 
 from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
 
@@ -134,6 +135,17 @@ def main(
         num_workers_dataloader=workers,
         img_size=(channels, img_size, img_size),
     )
+    mean = dm.train_transform.transforms[5].mean
+    std = dm.train_transform.transforms[5].std
+    train_transforms = transforms.Compose(
+        [
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(),
+            # torchvision.transforms.RandomRotation(180),
+            transforms.Normalize(mean, std),
+        ]
+    )
+    dm.train_transform = train_transforms
 
     # fixed model parameters based on the BigEarthNet v2.0 dataset
     config = ILMConfiguration(
