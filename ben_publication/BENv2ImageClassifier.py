@@ -35,7 +35,7 @@ class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
     ):
         super().__init__()
         self.lr = lr
-        self.warmup = warmup
+        self.warmup = None if warmup < 0 else warmup
         self.config = config
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
         assert config.classes == 19

@@ -188,8 +188,10 @@ def main(
             print(f"Pushing to {push_path}")
             model.push_to_hub(push_path, commit_message=f"Upload {model_name}")
             print("=== Done ===")
+        else:
+            print("=== Skipping upload to Huggingface Hub because no entity was provided ===")
     else:
-        print("=== Skipping upload to Huggingface Hub ===")
+        print("=== Skipping upload to Huggingface Hub because the new model did not improve the compare metric ===")
 
     print("=== Training finished ===")
 
