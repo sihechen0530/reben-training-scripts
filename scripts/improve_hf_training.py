@@ -142,15 +142,6 @@ def main(
     pl.seed_everything(seed, workers=True)
     torch.set_float32_matmul_precision("medium")
 
-    # load the model from Huggingface Hub and evaluate to get a baseline
-    compare_results = download_and_evaluate_model(
-        model_name=model_name,
-        limit_test_batches=5 if test_run else None,
-        batch_size=bs,
-        num_workers_dataloader=workers,
-    )
-    compare_metric = compare_results["AveragePrecision"]["macro"]
-
     # train the model with the given hyperparameters based on the config of the downloaded model
     config = BENv2ImageEncoder.from_pretrained(model_name).config
 
@@ -171,6 +162,15 @@ def main(
 
     new_results = trainer.test(model, datamodule=dm, ckpt_path="best")
     new_metric = new_results[0]["test/MultilabelAveragePrecision_macro"]
+
+    # load the model from Huggingface Hub and evaluate to get a baseline
+    compare_results = download_and_evaluate_model(
+        model_name=model_name,
+        limit_test_batches=5 if test_run else None,
+        batch_size=bs,
+        num_workers_dataloader=workers,
+    )
+    compare_metric = compare_results["AveragePrecision"]["macro"]
 
     print(f"=== Results ===")
     print(f"Compare metric: {compare_metric:.4f}")
