@@ -143,7 +143,12 @@ def main(
     torch.set_float32_matmul_precision("medium")
 
     # load the model from Huggingface Hub and evaluate to get a baseline
-    compare_results = download_and_evaluate_model(model_name=model_name, limit_test_batches=5 if test_run else None)
+    compare_results = download_and_evaluate_model(
+        model_name=model_name,
+        limit_test_batches=5 if test_run else None,
+        batch_size=bs,
+        num_workers_dataloader=workers,
+    )
     compare_metric = compare_results["AveragePrecision"]["macro"]
 
     # train the model with the given hyperparameters based on the config of the downloaded model
