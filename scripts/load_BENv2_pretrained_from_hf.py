@@ -2,6 +2,7 @@
 This script loads a pretrained model from the Huggingface Hub and evaluates it on the BigEarthNet v2.0 dataset.
 """
 from pathlib import Path
+from typing import Optional
 
 import lightning.pytorch as pl
 import typer
@@ -23,29 +24,58 @@ BENv2_DIR_DICT = {
 }
 
 
-def main(
-        model_name: str = "hackelle/BENv2-resnet18-42-all-v0.1.1-alpha",
+def download_and_evaluate_model(
+        model_name: str = "BIFOLD-BigEarthNetv2-0/BENv2-resnet50-42-s2-v0.1.1",
+        limit_test_batches: Optional[int] = 5,
+        batch_size: int = 16,
+        num_workers_dataloader: int = 8,
 ):
     model = BENv2ImageEncoder.from_pretrained(model_name)
     model.eval()
 
     # Load the BigEarthNet v2.0 dataset
-    channels = 12
+    channels = model.config.channels
+    image_size = model.config.image_size
     data_dirs = resolve_data_dir(BENv2_DIR_DICT, allow_mock=True)
     dm = BENv2DataModule(
         data_dirs=data_dirs,
-        batch_size=16,
-        num_workers_dataloader=8,
-        img_size=(channels, 120, 120),
+        batch_size=batch_size,
+        num_workers_dataloader=num_workers_dataloader,
+        img_size=(channels, image_size, image_size),
     )
 
     trainer = pl.Trainer(
         accelerator="auto",
-        limit_test_batches=5,
+        limit_test_batches=limit_test_batches,
     )
 
-    trainer.test(model, datamodule=dm)
+    results = trainer.test(model, datamodule=dm)
+    print("Finished testing the model.")
+    logged_results = {
+        "AveragePrecision": {
+            "macro": results[0]["test/MultilabelAveragePrecision_macro"],
+            "micro": results[0]["test/MultilabelAveragePrecision_micro"],
+        },
+        "F1Score": {
+            "macro": results[0]["test/MultilabelF1Score_macro"],
+            "micro": results[0]["test/MultilabelF1Score_micro"],
+        },
+        "Precision": {
+            "macro": results[0]["test/MultilabelPrecision_macro"],
+            "micro": results[0]["test/MultilabelPrecision_micro"],
+        },
+    }
+    # print the results as table with one row per metric and one column per metric type
+    performance_table = []
+    performance_table.append(f"\nResults (in %) for model {model_name}:")
+    performance_table.append(f"{'Metric':<16} | Macro | Micro")
+    performance_table.append("-" * 33)
+    for metric, values in logged_results.items():
+        performance_table.append(f"{metric:<16} | {values['macro'] * 100:.2f} | {values['micro'] * 100:.2f}")
+
+    print("\n".join(performance_table))
+    return logged_results
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    typer.run(download_and_evaluate_model)
