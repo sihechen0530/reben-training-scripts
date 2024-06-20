@@ -138,7 +138,7 @@ def main(
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         test_run: bool = typer.Option(True, help="Run training and eval with fewer epochs and batches")
 ):
-    upload_hf_entity = None  # "BIFOLD-BigEarthNetv2-0"
+    upload_hf_entity = "BIFOLD-BigEarthNetv2-0"
     pl.seed_everything(seed, workers=True)
     torch.set_float32_matmul_precision("medium")
 
