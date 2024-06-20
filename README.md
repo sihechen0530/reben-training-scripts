@@ -1,16 +1,32 @@
 # Training for BigEarthNet v2.0 (reBEN)
 
+<a href="https://www.tu.berlin/"><img src="_res/img/logos/TU-Berlin.svg" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="TU Berlin Logo"/>
+<img height="2em" hspace="10em"/>
+<a href="https://rsim.berlin/"><img src="_res/img/logos/RSiM.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="RSiM Logo"/>
+<img height="2em" hspace="10em"/>
+<a href="https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/"><img src="_res/img/logos/DIMA.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="DIMA Logo"/>
+<img height="2em" hspace="10em"/>
+<a href="http://bigearth.net/"><img src="_res/img/logos/BigEarth.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="BigEarth Logo"/>
+<img height="2em" hspace="10em"/>
+<a href="https://bifold.berlin/"><img src="_res/img/logos/bifold.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="BIFOLD Logo"/>
+
+[![Dataset](https://img.shields.io/badge/Dataset%20on-Zenodo-014baa.svg)](LINK PENDING)
+[![Publication arXiv](https://img.shields.io/badge/Publication%20on-arXiv-b21a1a.svg)](LINK PENDING)
+[![Publication](https://img.shields.io/badge/Publication%20on-IEEE%20Xplore-103546.svg)](LINK PENDING)
+
+<a href="http://bigearth.net/"><img src="_res/img/combined_2000_600_2020_0.jpg" style="font-size: 1rem; height: 11.3em; width: auto; margin-right: 1em" alt="BigEarth Logo"/>
 ## pre-requisites
 
 We recommend using the pyproject.toml file to install the required dependencies based on
-[Poetry](https://python-poetry.org/). For use with Poetry, CUDA 12.x is required.
+[Poetry](https://python-poetry.org/). For use with Poetry, CUDA 12.x is required. To use CUDA 11.x, the commented lines
+in the pyproject.toml file have to be uncommented. To install the dependencies using Poetry, run `poetry install`.
 
 Otherwise, the following dependencies are required:
 
-- Python 3.10 or higher (install with `sudo apt install python3.10`)
-- configilm[full] (install with `pip install configilm[full]`)
-- wandb (install with `pip install wandb`)
-- numpy 1.x (install with `pip install numpy~=1.26.4`)
+- Python 3.9 - 3.12 (e.g. install with `sudo apt install python3.10`)
+- configilm[full] (e.g. install with `pip install configilm[full]~=0.6.5`) 0.6.5 or higher
+- wandb (e.g. install with `pip install wandb`)
+- numpy 1.x (e.g. install with `pip install numpy~=1.26.4`)
 
 Please also create an account on [wandb](https://wandb.ai/) and login using `wandb login`. This is required to log the
 training progress.
@@ -63,6 +79,8 @@ The following parameters can be adjusted as arguments to the script:
   after training. Note that you have to be logged in to the Hugging Face model hub using `huggingface-cli login` for
   this to work. For this you need a Hugging Face account and a token which can be obtained from the Hugging Face
   website.
+- `--test-run` or `--no-test-run` (default: `True`) Whether to only run a few batches for testing. If `--no-test-run` is
+  set, the full dataset will be used for training and testing.
 
 The full command to train the resnet50 model as described in the BigEarthNet v2.0 paper with all bands from Sentinel-2 
 is as follows:
