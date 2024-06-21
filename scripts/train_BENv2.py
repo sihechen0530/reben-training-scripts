@@ -210,7 +210,7 @@ def main(
     print("=== Training finished ===")
     if upload_to_hub:
         print("=== Uploading model to Huggingface Hub ===")
-        model_name = f"BENv2-{architecture}-{seed}-{bandconfig}-{version}"
+        model_name = f"BENv2-{architecture}-{bandconfig}-{version}"
         print(f"Uploading model as {model_name}")
         model.save_pretrained(f"hf_models/{model_name}", config=config)
         push_path = f"{hf_entity}/{model_name}" if hf_entity else model_name

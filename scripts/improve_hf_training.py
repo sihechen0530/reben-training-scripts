@@ -6,10 +6,12 @@ from configilm.extra.BENv2_utils import resolve_data_dir
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 from lightning.pytorch.loggers import WandbLogger
 from torchvision import transforms
+from warnings import warn
 
 from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
 from scripts.load_BENv2_pretrained_from_hf import download_and_evaluate_model
 from scripts.train_BENv2 import _get_benv2_dir_dict
+
 
 
 def get_arch_version_bandconfig(model_name: str, config: ILMConfiguration):
@@ -180,13 +182,14 @@ def main(
         print("=== Uploading model to Huggingface Hub ===")
         architecture, version, bandconfig = get_arch_version_bandconfig(model_name, config)
         new_model_name = f"BENv2-{architecture}-{bandconfig}-{version}"
-        assert model_name == new_model_name, f"Model name {model_name} does not match new model name {new_model_name}"
+        if new_model_name != model_name.split("/")[-1]:
+            warn(f"New model name {new_model_name} does not match the old model name {model_name.split('/')[-1]}")
         if upload_hf_entity:
-            print(f"Uploading model as {model_name}")
-            model.save_pretrained(f"hf_models/{model_name}", config=config)
-            push_path = f"{upload_hf_entity}/{model_name}" if upload_hf_entity else model_name
+            print(f"Uploading model as {new_model_name} to entity {upload_hf_entity}")
+            model.save_pretrained(f"hf_models/{new_model_name}", config=config)
+            push_path = f"{upload_hf_entity}/{new_model_name}" if upload_hf_entity else new_model_name
             print(f"Pushing to {push_path}")
-            model.push_to_hub(push_path, commit_message=f"Upload {model_name}")
+            model.push_to_hub(push_path, commit_message=f"Upload {new_model_name}")
             print("=== Done ===")
         else:
             print("=== Skipping upload to Huggingface Hub because no entity was provided ===")
