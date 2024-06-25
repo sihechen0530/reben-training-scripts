@@ -11,6 +11,7 @@ from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import STANDARD_BANDS, resolve_data_dir
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
+from huggingface_hub import HfApi
 from lightning.pytorch.loggers import WandbLogger
 from torchvision import transforms
 
@@ -63,6 +64,41 @@ def _get_benv2_dir_dict() -> tuple[str, dict]:
     return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
+def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch: int):
+    # read the template
+    with open("README_template.md", "r") as f:
+        template = f.read()
+    # fill in the values
+    ds, architecture_raw, bandconfig, version = model_name.split("-")
+    architecture = architecture_raw.capitalize()
+    bands_used = "Sentinel-1 & Sentinel-2" if bandconfig == "all" \
+        else "Sentinel-2" if bandconfig == "s2" \
+        else "Sentinel-1"
+
+    template = template.replace("<BAND_CONFIG>", bandconfig)
+    template = template.replace("<EPOCHS>", str(current_epoch))
+    template = template.replace("<MODEL_NAME>", architecture)
+    template = template.replace("<MODEL_NAME_RAW>", architecture_raw)
+    template = template.replace("<DATASET_NAME>", "reBEN (BigEarthNet v2.0)")
+    template = template.replace("<BANDS_USED>", bands_used)
+    template = template.replace("<LEARNING_RATE>", str(hparams["lr"]))
+    template = template.replace("<BATCH_SIZE>", str(hparams["batch_size"]))
+    template = template.replace("<DROPOUT_RATE>", str(hparams["dropout"]))
+    template = template.replace("<DROP_PATH_RATE>", str(hparams["drop_path_rate"]))
+    template = template.replace("<WARMUP_STEPS>", str(hparams["warmup"]) if hparams["warmup"] is not None else "10_000")
+    template = template.replace("<AP_MACRO>", f"{results['test/MultilabelAveragePrecision_macro']:.6f}")
+    template = template.replace("<AP_MICRO>", f"{results['test/MultilabelAveragePrecision_micro']:.6f}")
+    template = template.replace("<F1_MACRO>", f"{results['test/MultilabelF1Score_macro']:.6f}")
+    template = template.replace("<F1_MICRO>", f"{results['test/MultilabelF1Score_micro']:.6f}")
+    template = template.replace("<PRECISION_MACRO>", f"{results['test/MultilabelPrecision_macro']:.6f}")
+    template = template.replace("<PRECISION_MICRO>", f"{results['test/MultilabelPrecision_micro']:.6f}")
+    template = template.replace("<SEED>", str(hparams["seed"]))
+
+    # write the new README.md
+    with open(f"hf_models/{model_name}/README.md", "w") as f:
+        f.write(template)
+
+
 def main(
         architecture: str = typer.Option("resnet18", help="Model name"),
         seed: int = typer.Option(42, help="Random seed"),
@@ -85,8 +121,8 @@ def main(
 
     # HUGGINGFACE MODEL PARAMETERS
     version = "v0.1.1"
-    hf_entity = "BIFOLD-BigEarthNetv2-0"  # e.g. your username or organisation
-    # you can set it to None if it should be uploaded to the logged in user
+    hf_entity = "hackelle"  # "BIFOLD-BigEarthNetv2-0"  # e.g. your username or organisation
+    # you can set it to None if it should be uploaded to the logged-in user
 
     # set seed
     pl.seed_everything(seed, workers=True)
@@ -161,22 +197,21 @@ def main(
         logger = pl.loggers.WandbLogger(project="BENv2", log_model=True)
     else:
         logger = pl.loggers.WandbLogger(project="BENv2", log_model=False, mode="disabled")
-    logger.log_hyperparams(
-        {
-            "architecture": architecture,
-            "seed": seed,
-            "lr": lr,
-            "epochs": epochs,
-            "batch_size": bs,
-            "workers": workers,
-            "channels": channels,
-            "dropout": drop_rate,
-            "drop_path_rate": drop_path_rate,
-            "bandconfig": bandconfig,
-            "warmup": warmup,
-            "version": version,
-        }
-    )
+    hparams = {
+        "architecture": architecture,
+        "seed": seed,
+        "lr": lr,
+        "epochs": epochs,
+        "batch_size": bs,
+        "workers": workers,
+        "channels": channels,
+        "dropout": drop_rate,
+        "drop_path_rate": drop_path_rate,
+        "bandconfig": bandconfig,
+        "warmup": warmup,
+        "version": version,
+    }
+    logger.log_hyperparams(hparams)
 
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         monitor="val/MultilabelAveragePrecision_macro",
@@ -195,30 +230,46 @@ def main(
     )
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
     trainer = pl.Trainer(
-        max_epochs=4 if test_run else epochs,
-        limit_train_batches=4 if test_run else None,
-        limit_val_batches=3 if test_run else None,
-        limit_test_batches=5 if test_run else None,
+        max_epochs=2 if test_run else epochs,
+        limit_train_batches=3 if test_run else None,
+        limit_val_batches=2 if test_run else None,
+        limit_test_batches=4 if test_run else None,
         logger=logger,
         accelerator="auto",
         callbacks=[checkpoint_callback, lr_monitor, early_stopping_callback],
     )
 
     trainer.fit(model, dm)
-    trainer.test(model, datamodule=dm, ckpt_path="best")
+    results = trainer.test(model, datamodule=dm, ckpt_path="best")
+    model_name = f"BENv2-{architecture}-{bandconfig}-{version}"
 
     print("=== Training finished ===")
     if upload_to_hub:
         print("=== Uploading model to Huggingface Hub ===")
-        model_name = f"BENv2-{architecture}-{bandconfig}-{version}"
         print(f"Uploading model as {model_name}")
         model.save_pretrained(f"hf_models/{model_name}", config=config)
-        push_path = f"{hf_entity}/{model_name}" if hf_entity else model_name
+        push_path = f"{hf_entity}/{model_name}" if hf_entity is not None else model_name
         print(f"Pushing to {push_path}")
         model.push_to_hub(push_path, commit_message=f"Upload {model_name}")
         print("=== Done ===")
     else:
         print("=== Skipping upload to Huggingface Hub ===")
+
+    # upload new README.md to Huggingface Hub
+    generate_readme(model_name, results[0], hparams, current_epoch=trainer.current_epoch)
+    if upload_to_hub and hf_entity is not None:
+        print("=== Uploading README.md to Huggingface Hub ===")
+        api = HfApi()
+        print(f"Uploading README.md to {hf_entity}/{model_name}")
+        api.upload_file(
+            path_or_fileobj=f"hf_models/{model_name}/README.md",
+            path_in_repo="README.md",
+            repo_id=f"{hf_entity}/{model_name}",
+        )
+        print("=== Done ===")
+    else:
+        print("=== Skipping upload of README.md to Huggingface Hub ===")
+        print("Provide hf_entity to upload README.md to Huggingface Hub")
 
 
 if __name__ == "__main__":
