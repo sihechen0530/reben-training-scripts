@@ -5,9 +5,24 @@ tags:
     - <DATASET_NAME>
     - Remote Sensing
     - Classification
+    - image-classification
     - Multispectral
 library_name: configilm
 license: mit
+widget:
+  - src: example.png
+    example_title: Example
+    output:
+      - label: <LABEL_1>
+        score: <SCORE_1>
+      - label: <LABEL_2>
+        score: <SCORE_2>
+      - label: <LABEL_3>
+        score: <SCORE_3>
+      - label: <LABEL_4>
+        score: <SCORE_4>
+      - label: <LABEL_5>
+        score: <SCORE_5>
 ---
 
 [TU Berlin](https://www.tu.berlin/) | [RSiM](https://rsim.berlin/) | [DIMA](https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/) | [BigEarth](http://www.bigearth.eu/) | [BIFOLD](https://bifold.berlin/)
@@ -16,17 +31,20 @@ license: mit
 
 # <MODEL_NAME> pretained on <DATASET_NAME> using <BANDS_USED> bands
 
+<!-- Optional images -->
+<!--
 [Sentinel-1](https://sentinel.esa.int/web/sentinel/missions/sentinel-1) | [Sentinel-2](https://sentinel.esa.int/web/sentinel/missions/sentinel-2)
 :---:|:---:
 <a href="https://sentinel.esa.int/web/sentinel/missions/sentinel-1"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/sentinel_2.jpg" style="font-size: 1rem; height: 10em; width: auto; margin-right: 1em" alt="Sentinel-2 Satellite"/> | <a href="https://sentinel.esa.int/web/sentinel/missions/sentinel-2"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/sentinel_1.jpg" style="font-size: 1rem; height: 10em; width: auto; margin-right: 1em" alt="Sentinel-1 Satellite"/>
+-->
 
-This model was trained on the <DATASET_NAME> dataset using the <BANDS_USED> bands. 
+This model was trained on the <DATASET_NAME_FULL_2> dataset using the <BANDS_USED> bands. 
 It was trained using the following parameters:
 - Number of epochs: up to 100 
   - with early stopping 
     - after 5 epochs of no improvement 
     - based on validation average precision (macro)
-  - this run was stopped after <EPOCHS> epochs
+  - the weights published in this model card were obtained after <EPOCHS> training epochs
 - Batch size: 512
 - Learning rate: <LEARNING_RATE>
 - Dropout rate: <DROPOUT_RATE>
@@ -35,34 +53,47 @@ It was trained using the following parameters:
 - Optimizer: AdamW
 - Seed: <SEED>
 
-The model was trained using the train_BENv2 script of the 
-[official reBEN repository](https://git.tu-berlin.de/rsim/reben-training-scripts).
+The model was trained using the training script of the 
+[official <DATASET_NAME_FULL> repository](https://git.tu-berlin.de/rsim/reben-training-scripts).
 See details in this repository for more information on how to train the model given the parameters above.
 
 ![[BigEarthNet](http://bigearth.net/)](https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/combined_2000_600_2020_0_wide.jpg)
 
 The model was evaluated on the test set of the <DATASET_NAME> dataset with the following results:
 
-| Metric | Value Macro | Value Micro |
-| --- | --- | --- |
-| Average Precision | <AP_MACRO> | <AP_MICRO> |
-| F1 Score | <F1_MACRO> | <F1_MICRO> |
-| Precision | <PRECISION_MACRO> | <PRECISION_MICRO> |
+| Metric            |       Value Macro |       Value Micro |
+|:------------------|------------------:|------------------:|
+| Average Precision |        <AP_MACRO> |        <AP_MICRO> |
+| F1 Score          |        <F1_MACRO> |        <F1_MICRO> |
+| Precision         | <PRECISION_MACRO> | <PRECISION_MICRO> |
 
-To use the model, download the model definition from the 
-[official reBEN repository](https://git.tu-berlin.de/rsim/reben-training-scripts) and load the model using the following 
-code:
+# Example
+| Example Input  |
+|:--------------:|
+| ![[BigEarthNet](http://bigearth.net/)](example.png)|
+
+| Example Output - Labels                                                   |                                                   Example Output - Scores |
+|:--------------------------------------------------------------------------|--------------------------------------------------------------------------:|
+| <p> <LABEL_1> <br> <LABEL_2> <br> <LABEL_3> <br> ... <br> <LABEL_19> </p> | <p> <SCORE_1> <br> <SCORE_2> <br> <SCORE_3> <br> ... <br> <SCORE_19> </p> |
+
+
+To use the model, download the codes that defines the model architecture from the
+[official <DATASET_NAME_FULL> repository](https://git.tu-berlin.de/rsim/reben-training-scripts) and load the model using the
+code below. Note, that you have to install `configilm` to use the provided code.
+
 ```python
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
+from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
-model = BENv2ImageEncoder.from_pretrained("path_to/huggingface_model_folder")
+model = BigEarthNetv2_0_ImageClassifier.from_pretrained("path_to/huggingface_model_folder")
 ```
 
 e.g.
-```python
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
 
-model = BENv2ImageEncoder.from_pretrained("BIFOLD-BigEarthNetv2-0/BENv2-<MODEL_NAME_RAW>-<BAND_CONFIG>-v0.1.1")
+```python
+from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+
+model = BigEarthNetv2_0_ImageClassifier.from_pretrained(
+  "BIFOLD-BigEarthNetv2-0/BENv2-<MODEL_NAME_RAW>-<BAND_CONFIG>-v0.1.1")
 ```
 
 If you use this model in your research or the provided code, please cite the following papers:

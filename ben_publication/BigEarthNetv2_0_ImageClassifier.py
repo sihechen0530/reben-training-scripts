@@ -18,7 +18,7 @@ from huggingface_hub import PyTorchModelHubMixin
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
-class BENv2ImageEncoder(pl.LightningModule, PyTorchModelHubMixin):
+class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
     """
     Wrapper around a pytorch module, allowing this module to be used in automatic
     training with pytorch lightning.

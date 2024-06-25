@@ -3,13 +3,15 @@ This script loads a pretrained model from the Huggingface Hub and evaluates it o
 """
 from pathlib import Path
 from typing import Optional
+import difflib
 
 import lightning.pytorch as pl
 import typer
+from huggingface_hub import HfApi
 from configilm.extra.BENv2_utils import resolve_data_dir
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
+from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -25,12 +27,22 @@ BENv2_DIR_DICT = {
 
 
 def download_and_evaluate_model(
-        model_name: str = "BIFOLD-BigEarthNetv2-0/BENv2-resnet50-42-s2-v0.1.1",
-        limit_test_batches: Optional[int] = 5,
-        batch_size: int = 16,
+        model_name: str = "hackelle/resnet18-all-v0.1.1",
+        limit_test_batches: Optional[int] = 4,
+        batch_size: int = 32,
         num_workers_dataloader: int = 8,
 ):
-    model = BENv2ImageEncoder.from_pretrained(model_name)
+    api = HfApi()
+    if not api.repo_exists(model_name):
+        entity = model_name.split("/")[0]
+        models = api.list_models(author=entity)
+        models = [x.id for x in models]
+        most_similar = difflib.get_close_matches(model_name, models)
+        if most_similar == []:
+            assert False, (f"Model {model_name} does not exist in the Huggingface Hub. No similarly named models found."
+                           f"Maybe the user/org {entity} does not exist?")
+        assert False, f"Model {model_name} does not exist in the Huggingface Hub. Did you mean one of {most_similar}?"
+    model = BigEarthNetv2_0_ImageClassifier.from_pretrained(model_name)
     model.eval()
 
     # Load the BigEarthNet v2.0 dataset

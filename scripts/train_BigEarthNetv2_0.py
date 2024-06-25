@@ -5,6 +5,7 @@ import socket
 from pathlib import Path
 
 import lightning.pytorch as pl
+import rasterio
 import torch
 import typer
 from configilm.ConfigILM import ILMConfiguration
@@ -15,7 +16,7 @@ from huggingface_hub import HfApi
 from lightning.pytorch.loggers import WandbLogger
 from torchvision import transforms
 
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
+from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -64,12 +65,52 @@ def _get_benv2_dir_dict() -> tuple[str, dict]:
     return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
-def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch: int):
+def _infere_example(S1_file: str, S2_file: str, bands: list[str], model: BigEarthNetv2_0_ImageClassifier):
+    import rasterio
+    from configilm.extra.BENv2_utils import stack_and_interpolate, NEW_LABELS
+    data = {}
+    s1_files = [f for f in Path(S1_file).rglob("*.tif")]
+    s2_files = [f for f in Path(S2_file).rglob("*.tiff")]
+    for b in bands:
+        if b in STANDARD_BANDS["S1"]:
+            for f in s1_files:
+                if b in f.name:
+                    data[b] = f
+                    break
+        elif b in STANDARD_BANDS["S2"]:
+            for f in s2_files:
+                if b in f.name:
+                    data[b] = f
+                    break
+    for d in data:
+        # read the file
+        with rasterio.open(data[d]) as src:
+            img = src.read(1)
+            data[d] = img
+
+    # stack the bands to a 3D tensor based on the order of the bands
+    img = stack_and_interpolate(data, order=bands, img_size=120, upsample_mode="nearest").unsqueeze(0)
+
+    # infer the image
+    model.eval()
+    with torch.no_grad():
+        output = model(img)
+    results = torch.sigmoid(output)
+    results = results.squeeze().numpy()
+    assert len(results) == len(NEW_LABELS), f"Expected {len(NEW_LABELS)} results, got {len(results)}"
+    results = {NEW_LABELS[i]: results[i] for i in range(len(NEW_LABELS))}
+
+    input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :]
+    return results, input_rgb
+
+
+def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch: int, model: BigEarthNetv2_0_ImageClassifier):
+    import PIL.Image
     # read the template
     with open("README_template.md", "r") as f:
         template = f.read()
     # fill in the values
-    ds, architecture_raw, bandconfig, version = model_name.split("-")
+    architecture_raw, bandconfig, version = model_name.split("-")
     architecture = architecture_raw.capitalize()
     bands_used = "Sentinel-1 & Sentinel-2" if bandconfig == "all" \
         else "Sentinel-2" if bandconfig == "s2" \
@@ -79,7 +120,9 @@ def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch
     template = template.replace("<EPOCHS>", str(current_epoch))
     template = template.replace("<MODEL_NAME>", architecture)
     template = template.replace("<MODEL_NAME_RAW>", architecture_raw)
-    template = template.replace("<DATASET_NAME>", "reBEN (BigEarthNet v2.0)")
+    template = template.replace("<DATASET_NAME>", "BigEarthNet v2.0")
+    template = template.replace("<DATASET_NAME_FULL>", "BigEarthNet v2.0 (reBEN)")
+    template = template.replace("<DATASET_NAME_FULL_2>", "BigEarthNet v2.0 (also known as reBEN)")
     template = template.replace("<BANDS_USED>", bands_used)
     template = template.replace("<LEARNING_RATE>", str(hparams["lr"]))
     template = template.replace("<BATCH_SIZE>", str(hparams["batch_size"]))
@@ -93,6 +136,27 @@ def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch
     template = template.replace("<PRECISION_MACRO>", f"{results['test/MultilabelPrecision_macro']:.6f}")
     template = template.replace("<PRECISION_MICRO>", f"{results['test/MultilabelPrecision_micro']:.6f}")
     template = template.replace("<SEED>", str(hparams["seed"]))
+
+    if bandconfig == "all":
+        bands = STANDARD_BANDS[12]  # 10m + 20m Sentinel-2 + 10m Sentinel-1
+    elif bandconfig == "s2":
+        bands = STANDARD_BANDS[10]  # 10m + 20m Sentinel-2
+    elif bandconfig == "s1":
+        bands = STANDARD_BANDS[2]  # Sentinel-1
+    else:
+        raise ValueError(f"Unsupported band configuration {bandconfig}")
+    result, img = _infere_example("./data/S1", "./data/S2", bands, model)
+    # write the example image as png
+    img = (img - img.min()) / (img.max() - img.min())
+    img = (img * 255).astype("uint8")
+    img = img.transpose(1, 2, 0)
+    img = PIL.Image.fromarray(img)
+    img.save(f"hf_models/{model_name}/example.png")
+
+    # replace results
+    for i, (label, score) in enumerate(result.items()):
+        template = template.replace(f"<LABEL_{i+1}>", label)
+        template = template.replace(f"<SCORE_{i+1}>", f"{score:.6f}")
 
     # write the new README.md
     with open(f"hf_models/{model_name}/README.md", "w") as f:
@@ -109,7 +173,7 @@ def main(
         drop_path_rate: float = typer.Option(0.0, help="Drop path rate"),
         warmup: int = typer.Option(-1, help="Warmup steps, set to -1 for automatic calculation"),
         workers: int = typer.Option(8, help="Number of workers"),
-        bandconfig: str = typer.Option("all",
+        bandconfig: str = typer.Option("s2",
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
@@ -190,7 +254,7 @@ def main(
     warmup = None if warmup == -1 else warmup
     assert warmup is None or warmup > 0, "Warmup steps must be positive or -1 for automatic calculation"
 
-    model = BENv2ImageEncoder(config, lr=lr, warmup=warmup)
+    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup)
 
     # we assume, that we are already logged in to wandb
     if use_wandb:
@@ -241,13 +305,13 @@ def main(
 
     trainer.fit(model, dm)
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
-    model_name = f"BENv2-{architecture}-{bandconfig}-{version}"
+    model_name = f"{architecture}-{bandconfig}-{version}"
+    model.save_pretrained(f"hf_models/{model_name}", config=config)
 
     print("=== Training finished ===")
     if upload_to_hub:
         print("=== Uploading model to Huggingface Hub ===")
         print(f"Uploading model as {model_name}")
-        model.save_pretrained(f"hf_models/{model_name}", config=config)
         push_path = f"{hf_entity}/{model_name}" if hf_entity is not None else model_name
         print(f"Pushing to {push_path}")
         model.push_to_hub(push_path, commit_message=f"Upload {model_name}")
@@ -256,7 +320,7 @@ def main(
         print("=== Skipping upload to Huggingface Hub ===")
 
     # upload new README.md to Huggingface Hub
-    generate_readme(model_name, results[0], hparams, current_epoch=trainer.current_epoch)
+    generate_readme(model_name, results[0], hparams, current_epoch=trainer.current_epoch, model=model)
     if upload_to_hub and hf_entity is not None:
         print("=== Uploading README.md to Huggingface Hub ===")
         api = HfApi()
@@ -264,6 +328,12 @@ def main(
         api.upload_file(
             path_or_fileobj=f"hf_models/{model_name}/README.md",
             path_in_repo="README.md",
+            repo_id=f"{hf_entity}/{model_name}",
+        )
+        print(f"Uploading example image to {hf_entity}/{model_name}")
+        api.upload_file(
+            path_or_fileobj=f"hf_models/{model_name}/example.png",
+            path_in_repo="example.png",
             repo_id=f"{hf_entity}/{model_name}",
         )
         print("=== Done ===")

@@ -8,17 +8,17 @@ from lightning.pytorch.loggers import WandbLogger
 from torchvision import transforms
 from warnings import warn
 
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
-from scripts.load_BENv2_pretrained_from_hf import download_and_evaluate_model
-from scripts.train_BENv2 import _get_benv2_dir_dict
+from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from scripts.load_BigEarthNetv2_0_pretrained_from_hf import download_and_evaluate_model
+from scripts.train_BigEarthNetv2_0 import _get_benv2_dir_dict
 
 
 
 def get_arch_version_bandconfig(model_name: str, config: ILMConfiguration):
-    architecture = model_name.split("/")[-1].split("-")[1]
+    architecture = model_name.split("/")[-1].split("-")[-3]
     assert architecture == config.timm_model_name, f"Model name {architecture} does not match config {config.timm_model_name}"
     version = model_name.split("/")[-1].split("-")[-1]
-    bandconfig = model_name.split("/")[-1].split("-")[2]
+    bandconfig = model_name.split("/")[-1].split("-")[-2]
     if bandconfig == "s2":
         assert config.channels == 10, f"Bandconfig {bandconfig} does not match config {config.channels}"
     elif bandconfig == "s1":
@@ -46,7 +46,7 @@ def train_new_model(
 ):
     architecture, version, bandconfig = get_arch_version_bandconfig(comparison_model_name, config)
 
-    model = BENv2ImageEncoder(config, lr=lr, warmup=warmup)
+    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup)
 
     # we assume, that we are already logged in to wandb
     if use_wandb:
@@ -128,7 +128,7 @@ def train_new_model(
 
 
 def main(
-        model_name: str = typer.Option("BIFOLD-BigEarthNetv2-0/BENv2-resnet50-all-v0.1.1", help="Model name"),
+        model_name: str = typer.Option("hackelle/resnet18-s2-v0.1.1", help="Model name"),
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
@@ -140,12 +140,17 @@ def main(
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         test_run: bool = typer.Option(True, help="Run training and eval with fewer epochs and batches")
 ):
-    upload_hf_entity = "BIFOLD-BigEarthNetv2-0"
+    upload_hf_entity = "hackelle"
     pl.seed_everything(seed, workers=True)
     torch.set_float32_matmul_precision("medium")
 
     # train the model with the given hyperparameters based on the config of the downloaded model
-    config = BENv2ImageEncoder.from_pretrained(model_name).config
+    config = BigEarthNetv2_0_ImageClassifier.from_pretrained(model_name).config
+
+    architecture, version, bandconfig = get_arch_version_bandconfig(model_name, config)
+    new_model_name = f"{architecture}-{bandconfig}-{version}"
+    if new_model_name != model_name.split("/")[-1]:
+        warn(f"New model name {new_model_name} does not match the old model name {model_name.split('/')[-1]}")
 
     model, dm, trainer = train_new_model(
         config=config,
@@ -180,10 +185,6 @@ def main(
     if new_metric > compare_metric:
         print(f"New model improved the compare metric by {new_metric - compare_metric:.4f}")
         print("=== Uploading model to Huggingface Hub ===")
-        architecture, version, bandconfig = get_arch_version_bandconfig(model_name, config)
-        new_model_name = f"BENv2-{architecture}-{bandconfig}-{version}"
-        if new_model_name != model_name.split("/")[-1]:
-            warn(f"New model name {new_model_name} does not match the old model name {model_name.split('/')[-1]}")
         if upload_hf_entity:
             print(f"Uploading model as {new_model_name} to entity {upload_hf_entity}")
             model.save_pretrained(f"hf_models/{new_model_name}", config=config)
