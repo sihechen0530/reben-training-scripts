@@ -11,7 +11,7 @@ from huggingface_hub import HfApi
 from configilm.extra.BENv2_utils import resolve_data_dir
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 
-from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 

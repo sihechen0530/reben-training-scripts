@@ -82,7 +82,7 @@ To use the model, download the codes that defines the model architecture from th
 code below. Note, that you have to install `configilm` to use the provided code.
 
 ```python
-from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 model = BigEarthNetv2_0_ImageClassifier.from_pretrained("path_to/huggingface_model_folder")
 ```
@@ -90,7 +90,7 @@ model = BigEarthNetv2_0_ImageClassifier.from_pretrained("path_to/huggingface_mod
 e.g.
 
 ```python
-from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 model = BigEarthNetv2_0_ImageClassifier.from_pretrained(
   "BIFOLD-BigEarthNetv2-0/BENv2-<MODEL_NAME_RAW>-<BAND_CONFIG>-v0.1.1")

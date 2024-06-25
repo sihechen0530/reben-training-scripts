@@ -16,7 +16,7 @@ from huggingface_hub import HfApi
 from lightning.pytorch.loggers import WandbLogger
 from torchvision import transforms
 
-from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 

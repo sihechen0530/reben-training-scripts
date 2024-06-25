@@ -8,7 +8,7 @@ from lightning.pytorch.loggers import WandbLogger
 from torchvision import transforms
 from warnings import warn
 
-from ben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 from scripts.load_BigEarthNetv2_0_pretrained_from_hf import download_and_evaluate_model
 from scripts.train_BigEarthNetv2_0 import _get_benv2_dir_dict
 
