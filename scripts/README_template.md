@@ -68,9 +68,9 @@ The model was evaluated on the test set of the <DATASET_NAME> dataset with the f
 | Precision         | <PRECISION_MACRO> | <PRECISION_MICRO> |
 
 # Example
-| Example Input  |
-|:--------------:|
-| ![[BigEarthNet](http://bigearth.net/)](example.png)|
+|             Example Input (<VIS_BANDS>)             |
+|:---------------------------------------------------:|
+| ![[BigEarthNet](http://bigearth.net/)](example.png) |
 
 | Example Output - Labels                                                   |                                                   Example Output - Scores |
 |:--------------------------------------------------------------------------|--------------------------------------------------------------------------:|
