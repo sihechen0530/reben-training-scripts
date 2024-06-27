@@ -394,13 +394,13 @@ files = [
 
 [[package]]
 name = "configilm"
-version = "0.6.6"
+version = "0.6.7"
 description = "A state-of-the-art tool for Python developers seeking to rapidly and iteratively develop vision and language models within the [`pytorch`](https://pytorch.org/) framework"
 optional = false
 python-versions = "<3.12,>=3.9"
 files = [
-    {file = "configilm-0.6.6-py3-none-any.whl", hash = "sha256:3534cfc4620ca4483043e98362da2f866d028b7009722348d29448864fdaaee0"},
-    {file = "configilm-0.6.6.tar.gz", hash = "sha256:4059ff465261cc26d9706063628918a6249ba90579e63e22f37efb10a7e8c4af"},
+    {file = "configilm-0.6.7-py3-none-any.whl", hash = "sha256:b36ae130ba98aa6d3cb91ee5367f55db5499f41c02d2ea535b837cf0e5876a84"},
+    {file = "configilm-0.6.7.tar.gz", hash = "sha256:883b084c180c961f65a317e70e6f6ca5d9c0039bcc01cd42b91ebef17faea70e"},
 ]
 
 [package.dependencies]
@@ -556,13 +556,13 @@ files = [
 
 [[package]]
 name = "fsspec"
-version = "2024.6.0"
+version = "2024.6.1"
 description = "File-system specification"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "fsspec-2024.6.0-py3-none-any.whl", hash = "sha256:58d7122eb8a1a46f7f13453187bfea4972d66bf01618d37366521b1998034cee"},
-    {file = "fsspec-2024.6.0.tar.gz", hash = "sha256:f579960a56e6d8038a9efc8f9c77279ec12e6299aa86b0769a7e9c46b94527c2"},
+    {file = "fsspec-2024.6.1-py3-none-any.whl", hash = "sha256:3cb443f8bcd2efb31295a5b9fdb02aee81d8452c80d28f97a6d0959e6cee101e"},
+    {file = "fsspec-2024.6.1.tar.gz", hash = "sha256:fad7d7e209dd4c1208e3bbfda706620e0da5142bebbd9c384afb95b07e798e49"},
 ]
 
 [package.dependencies]
@@ -1261,6 +1261,7 @@ description = "Nvidia JIT LTO Library"
 optional = false
 python-versions = ">=3"
 files = [
+    {file = "nvidia_nvjitlink_cu12-12.5.40-py3-none-manylinux2014_aarch64.whl", hash = "sha256:004186d5ea6a57758fd6d57052a123c73a4815adf365eb8dd6a85c9eaa7535ff"},
     {file = "nvidia_nvjitlink_cu12-12.5.40-py3-none-manylinux2014_x86_64.whl", hash = "sha256:d9714f27c1d0f0895cd8915c07a87a1d0029a0aa36acaf9156952ec2a8a12189"},
     {file = "nvidia_nvjitlink_cu12-12.5.40-py3-none-win_amd64.whl", hash = "sha256:c3401dc8543b52d3a8158007a0c1ab4e9c768fcbd24153a48c86972102197ddd"},
 ]
@@ -2859,4 +2860,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10, <3.12"
-content-hash = "3bdad07ef8e84d31686b0cb3f6686138df53ef40e7eeeca12d1b9d4fa48387f7"
+content-hash = "895e121de834b0025e743ebfbff3db77b336f8cd9a31aa179b7704e2a6dd9916"
