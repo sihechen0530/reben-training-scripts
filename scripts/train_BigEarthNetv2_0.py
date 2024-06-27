@@ -175,8 +175,8 @@ def main(
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
         test_run: bool = typer.Option(True, help="Run training with fewer epochs and batches"),
 ):
-    assert Path(".").resolve().name == "reBEN", \
-        "Please run this script from the reBEN scripts directory. Otherwise some relative paths might not work."
+    assert Path(".").resolve().name == "scripts", \
+        "Please run this script from the scripts directory. Otherwise some relative paths might not work."
     # FIXED MODEL PARAMETERS
     num_classes = 19
     img_size = 120
