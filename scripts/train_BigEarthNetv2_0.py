@@ -95,6 +95,16 @@ def _infere_example(S1_file: str, S2_file: str, bands: list[str], model: BigEart
     assert len(results) == len(NEW_LABELS), f"Expected {len(NEW_LABELS)} results, got {len(results)}"
     results = {NEW_LABELS[i]: results[i] for i in range(len(NEW_LABELS))}
 
+    if img.shape[1] == 2:
+        # S1 image, add VV/VH as third channel
+        img = torch.cat([img[:,0], img[:,1], img[:, 0, :, :] / img[:, 1, :, :]]).unsqueeze(0)
+    elif img.shape[1] == 10:
+        # S2 image, use only first 3 bands
+        img = img[:,:3]
+    elif img.shape[1] == 12:
+        # S2 + S1 image, use only first 3 bands of S2
+        img = img[:,:3]
+
     input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :]
     return results, input_rgb
 
@@ -135,12 +145,16 @@ def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch
 
     if bandconfig == "all":
         bands = STANDARD_BANDS[12]  # 10m + 20m Sentinel-2 + 10m Sentinel-1
+        vis_bands = "only RGB bands from Sentinel-2"
     elif bandconfig == "s2":
         bands = STANDARD_BANDS[10]  # 10m + 20m Sentinel-2
+        vis_bands = "only RGB bands from Sentinel-2"
     elif bandconfig == "s1":
         bands = STANDARD_BANDS[2]  # Sentinel-1
+        vis_bands = "VV, VH and VV/VH bands from Sentinel-1"
     else:
         raise ValueError(f"Unsupported band configuration {bandconfig}")
+    template = template.replace("<VIS_BANDS>", vis_bands)
     result, img = _infere_example("./data/S1", "./data/S2", bands, model)
     # write the example image as png
     img = (img - img.min()) / (img.max() - img.min())
@@ -169,7 +183,7 @@ def main(
         drop_path_rate: float = typer.Option(0.0, help="Drop path rate"),
         warmup: int = typer.Option(-1, help="Warmup steps, set to -1 for automatic calculation"),
         workers: int = typer.Option(8, help="Number of workers"),
-        bandconfig: str = typer.Option("s2",
+        bandconfig: str = typer.Option("all",
                                        help="Band configuration, one of all, s2, s1, all_full, s2_full, s1_full"),
         use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
         upload_to_hub: bool = typer.Option(False, help="Upload model to Huggingface Hub"),
