@@ -24,7 +24,7 @@ in the pyproject.toml file have to be uncommented. To install the dependencies u
 Otherwise, the following dependencies are required:
 
 - Python 3.9 - 3.12 (e.g. install with `sudo apt install python3.10`)
-- configilm[full] (e.g. install with `pip install configilm[full]~=0.6.5`) 0.6.5 or higher
+- configilm[full] (e.g. install with `pip install configilm[full]~=0.6.6`) 0.6.6 or higher
 - wandb (e.g. install with `pip install wandb`)
 - numpy 1.x (e.g. install with `pip install numpy~=1.26.4`)
 
@@ -39,19 +39,19 @@ the [RSTensorEncoder](https://github.com/kai-tub/rs-tensor-encoder) tool. The to
 downloaded from the [BigEarthNet website](http://bigearth.net/) or installed as [AppImage](www.appimage.org) from the
 [rs-tensor-encoder](https://github.com/kai-tub/rs-tensor-encoder) repository.
 
-Enter the paths to the following files in the `scripts/train_BENv2.py` script:
+Enter the paths to the following files in the `scripts/train_BigEarthNetv2_0.py` script:
 
 - `images_lmdb` (path to the LMDB database)
 - `split_csv` (path to the CSV file containing the split information)
 - `s1_mapping_csv` (path to the CSV file containing the mapping of the patch IDs to the Sentinel-1 image IDs)
 - `labels_csv` (path to the CSV file containing the labels)
 
-Enter the paths at the top of the `scripts/train_BENv2.py` script in the `BENv2_DIR_DICT` dictionary.
+Enter the paths at the top of the `scripts/train_BigEarthNetv2_0.py` script in the `BENv2_DIR_DICT` dictionary.
 
 ## Training
 
-Run the training script with `python scripts/train_BENv2.py`. The script will train the model and log the progress to
-wandb.
+Run the training script with `python scripts/train_BigEarthNetv2_0.py`. 
+The script will train the model and log the progress to wandb.
 
 The following parameters can be adjusted as arguments to the script:
 
@@ -85,7 +85,7 @@ The following parameters can be adjusted as arguments to the script:
 The full command to train the resnet50 model as described in the BigEarthNet v2.0 paper with all bands from Sentinel-2 
 is as follows:
 
-`python train_BENv2.py --no-test-run --use-wandb --upload-to-hub --architecture=resnet50 --bandconfig=s2 --bs=512 --lr=0.001`
+`python train_BigEarthNetv2_0.py --no-test-run --use-wandb --upload-to-hub --architecture=resnet50 --bandconfig=s2 --bs=512 --lr=0.001`
 
 This command
  - used the full dataset instead of only a few batches to test
@@ -97,16 +97,18 @@ This command
  - used a learning rate of 0.001
 
 The trained model will be saved in the `models` directory and on huggingface. It can be loaded using
-```python
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
 
-model = BENv2ImageEncoder.from_pretrained("<entity>/<model-name>")
+```python
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+
+model = BigEarthNetv2_0_ImageClassifier.from_pretrained("<entity>/<model-name>")
 ```
 e.g.
-```python
-from ben_publication.BENv2ImageClassifier import BENv2ImageEncoder
 
-model = BENv2ImageEncoder.from_pretrained("BIFOLD-BigEarthNetv2-0/BENv2-resnet50-42-s2-v0.1.1")
+```python
+from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+
+model = BigEarthNetv2_0_ImageClassifier.from_pretrained("BIFOLD-BigEarthNetv2-0/resnet50-s2-v0.1.1")
 ```
 Note, that the model configuration is automatically loaded from the Hugging Face model hub.
 
