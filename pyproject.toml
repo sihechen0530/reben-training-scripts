@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10, <3.12"
-configilm = { extras = ["full"], version = "^0.6.5" }
+configilm = { extras = ["full"], version = "^0.6.6" }
 wandb = "^0.17.1"
 numpy = "^1.26.4"
 

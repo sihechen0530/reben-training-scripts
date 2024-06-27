@@ -5,7 +5,6 @@ import socket
 from pathlib import Path
 
 import lightning.pytorch as pl
-import rasterio
 import torch
 import typer
 from configilm.ConfigILM import ILMConfiguration
@@ -23,33 +22,29 @@ __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 BENv2_DIR_MARS = Path("/data/kaiclasen")
 BENv2_DIR_DICT_MARS = {
     "images_lmdb": BENv2_DIR_MARS / "BENv2.lmdb",
-    "split_csv": BENv2_DIR_MARS / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR_MARS / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_MARS / "patch_id_label_mapping.csv",
+    "metadata_parquet": BENv2_DIR_MARS / "metadata.parquet",
+    "metadata_snow_cloud_parquet": BENv2_DIR_MARS / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
 BENv2_DIR_ERDE = Path("/faststorage/BigEarthNet-V2")
 BENv2_DIR_DICT_ERDE = {
     "images_lmdb": BENv2_DIR_ERDE / "BigEarthNet-V2-LMDB",
-    "split_csv": BENv2_DIR_ERDE / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR_ERDE / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_ERDE / "patch_id_label_mapping.csv",
+    "metadata_parquet": BENv2_DIR_ERDE / "metadata.parquet",
+    "metadata_snow_cloud_parquet": BENv2_DIR_ERDE / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
 BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline")
 BENv2_DIR_DICT_PLUTO = {
     "images_lmdb": BENv2_DIR_PLUTO / "artifacts-lmdb" / "BigEarthNet-V2",
-    "split_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_PLUTO / "artifacts-result" / "patch_id_label_mapping.csv",
+    "metadata_parquet": BENv2_DIR_PLUTO / "artifacts-result" / "metadata.parquet",
+    "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "artifacts-result" / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
 BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BigEarthNet-V2-LMDB",
-    "split_csv": BENv2_DIR_DEFAULT / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR_DEFAULT / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR_DEFAULT / "patch_id_label_mapping.csv",
+    "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
+    "metadata_snow_cloud_parquet": BENv2_DIR_DEFAULT / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
 BENv2_DIR_DICTS = {
@@ -104,7 +99,8 @@ def _infere_example(S1_file: str, S2_file: str, bands: list[str], model: BigEart
     return results, input_rgb
 
 
-def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch: int, model: BigEarthNetv2_0_ImageClassifier):
+def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch: int,
+                    model: BigEarthNetv2_0_ImageClassifier):
     import PIL.Image
     # read the template
     with open("README_template.md", "r") as f:
@@ -155,8 +151,8 @@ def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch
 
     # replace results
     for i, (label, score) in enumerate(result.items()):
-        template = template.replace(f"<LABEL_{i+1}>", label)
-        template = template.replace(f"<SCORE_{i+1}>", f"{score:.6f}")
+        template = template.replace(f"<LABEL_{i + 1}>", label)
+        template = template.replace(f"<SCORE_{i + 1}>", f"{score:.6f}")
 
     # write the new README.md
     with open(f"hf_models/{model_name}/README.md", "w") as f:
@@ -339,7 +335,12 @@ def main(
         print("=== Done ===")
     else:
         print("=== Skipping upload of README.md to Huggingface Hub ===")
-        print("Provide hf_entity to upload README.md to Huggingface Hub")
+        if not upload_to_hub:
+            print("    Reason: Upload to Huggingface Hub was disabled.")
+        elif hf_entity is None:
+            print("    Reason: No Huggingface Hub entity specified.")
+        else:
+            print("    Reason: Unknown error.")
 
 
 if __name__ == "__main__":
