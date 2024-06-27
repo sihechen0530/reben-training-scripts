@@ -33,7 +33,7 @@ BENv2_DIR_DICT_ERDE = {
     "metadata_snow_cloud_parquet": BENv2_DIR_ERDE / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline")
+BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline/artifacts")
 BENv2_DIR_DICT_PLUTO = {
     "images_lmdb": BENv2_DIR_PLUTO / "artifacts-lmdb" / "BigEarthNet-V2",
     "metadata_parquet": BENv2_DIR_PLUTO / "artifacts-result" / "metadata.parquet",
