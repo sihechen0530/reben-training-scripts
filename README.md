@@ -42,9 +42,8 @@ downloaded from the [BigEarthNet website](http://bigearth.net/) or installed as 
 Enter the paths to the following files in the `scripts/train_BigEarthNetv2_0.py` script:
 
 - `images_lmdb` (path to the LMDB database)
-- `split_csv` (path to the CSV file containing the split information)
-- `s1_mapping_csv` (path to the CSV file containing the mapping of the patch IDs to the Sentinel-1 image IDs)
-- `labels_csv` (path to the CSV file containing the labels)
+- `metadata_parquet` (path to the metadata file)
+- `metadata_snow_cloud_parquet` (path to the metadata file with snow and cloud patches, not strictly necessary)
 
 Enter the paths at the top of the `scripts/train_BigEarthNetv2_0.py` script in the `BENv2_DIR_DICT` dictionary.
 
