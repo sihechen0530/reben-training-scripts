@@ -196,8 +196,8 @@ def upload_model_and_readme_to_hub(
         hparams: dict,
         trainer: pl.Trainer,
         upload: bool):
-    assert hf_entity is not None, "Please specify a Huggingface entity to upload the model to."
     if upload:
+        assert hf_entity is not None, "Please specify a Huggingface entity to upload the model to."
         print("=== Uploading model to Huggingface Hub ===")
         print(f"Uploading model as {model_name}")
         push_path = f"{hf_entity}/{model_name}" if hf_entity is not None else model_name
