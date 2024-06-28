@@ -143,7 +143,7 @@ def main(
         print(f"New model improved the compare metric by {new_metric - compare_metric:.4f}")
         upload_model_and_readme_to_hub(
             model=model,
-            model_name=model_name,
+            model_name=new_model_name,
             hf_entity=hf_entity,
             test_results=new_results[0],
             hparams=hparams,
