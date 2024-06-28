@@ -80,6 +80,8 @@ The following parameters can be adjusted as arguments to the script:
   website.
 - `--test-run` or `--no-test-run` (default: `True`) Whether to only run a few batches for testing. If `--no-test-run` is
   set, the full dataset will be used for training and testing.
+- `--hf-entity` (default: `None`) The Hugging Face entity to use for uploading the model. Has to be set if
+  `--upload-to-hub` is set.
 
 The full command to train the resnet50 model as described in the BigEarthNet v2.0 paper with all bands from Sentinel-2 
 is as follows:

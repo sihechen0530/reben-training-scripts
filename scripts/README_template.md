@@ -40,11 +40,8 @@ widget:
 
 This model was trained on the <DATASET_NAME_FULL_2> dataset using the <BANDS_USED> bands. 
 It was trained using the following parameters:
-- Number of epochs: up to 100 
-  - with early stopping 
-    - after 5 epochs of no improvement 
-    - based on validation average precision (macro)
-  - the weights published in this model card were obtained after <EPOCHS> training epochs
+- Number of epochs: up to 100 (with early stopping after 5 epochs of no improvement based on validation average 
+precision macro)
 - Batch size: 512
 - Learning rate: <LEARNING_RATE>
 - Dropout rate: <DROPOUT_RATE>
@@ -53,33 +50,32 @@ It was trained using the following parameters:
 - Optimizer: AdamW
 - Seed: <SEED>
 
-The model was trained using the training script of the 
-[official <DATASET_NAME_FULL> repository](https://git.tu-berlin.de/rsim/reben-training-scripts).
-See details in this repository for more information on how to train the model given the parameters above.
+The weights published in this model card were obtained after <EPOCHS> training epochs.
+For more information, please visit the [official <DATASET_NAME_FULL> repository](https://git.tu-berlin.de/rsim/reben-training-scripts), where you can find the training scripts.
 
 ![[BigEarthNet](http://bigearth.net/)](https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/combined_2000_600_2020_0_wide.jpg)
 
 The model was evaluated on the test set of the <DATASET_NAME> dataset with the following results:
 
-| Metric            |       Value Macro |       Value Micro |
+| Metric            |       Macro |       Micro |
 |:------------------|------------------:|------------------:|
 | Average Precision |        <AP_MACRO> |        <AP_MICRO> |
 | F1 Score          |        <F1_MACRO> |        <F1_MICRO> |
 | Precision         | <PRECISION_MACRO> | <PRECISION_MICRO> |
 
 # Example
-|             Example Input (<VIS_BANDS>)             |
+|             <VIS_BANDS>              |
 |:---------------------------------------------------:|
 | ![[BigEarthNet](http://bigearth.net/)](example.png) |
 
-| Example Output - Labels                                                   |                                                   Example Output - Scores |
+| Class labels                                                              |                                                          Predicted scores |
 |:--------------------------------------------------------------------------|--------------------------------------------------------------------------:|
 | <p> <LABEL_1> <br> <LABEL_2> <br> <LABEL_3> <br> ... <br> <LABEL_19> </p> | <p> <SCORE_1> <br> <SCORE_2> <br> <SCORE_3> <br> ... <br> <SCORE_19> </p> |
 
 
-To use the model, download the codes that defines the model architecture from the
+To use the model, download the codes that define the model architecture from the
 [official <DATASET_NAME_FULL> repository](https://git.tu-berlin.de/rsim/reben-training-scripts) and load the model using the
-code below. Note, that you have to install `configilm` to use the provided code.
+code below. Note that you have to install [`configilm`](https://pypi.org/project/configilm/) to use the provided code.
 
 ```python
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
@@ -93,7 +89,7 @@ e.g.
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 
 model = BigEarthNetv2_0_ImageClassifier.from_pretrained(
-  "BIFOLD-BigEarthNetv2-0/BENv2-<MODEL_NAME_RAW>-<BAND_CONFIG>-v0.1.1")
+  "BIFOLD-BigEarthNetv2-0/<MODEL_NAME_RAW>-<BAND_CONFIG>-v0.1.1")
 ```
 
 If you use this model in your research or the provided code, please cite the following papers:

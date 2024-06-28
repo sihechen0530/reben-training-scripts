@@ -12,18 +12,9 @@ from configilm.extra.BENv2_utils import resolve_data_dir
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from scripts.utils import get_benv2_dir_dict
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
-
-BASE_DIR = Path("~/data").expanduser()
-BENv2_DIR = BASE_DIR / "BigEarthNet-V2"
-
-BENv2_DIR_DICT = {
-    "images_lmdb": BENv2_DIR / "BigEarthNet-V2-LMDB",
-    "split_csv": BENv2_DIR / "patch_id_split_mapping.csv",
-    "s1_mapping_csv": BENv2_DIR / "patch_id_s1_mapping.csv",
-    "labels_csv": BENv2_DIR / "patch_id_label_mapping.csv",
-}
 
 
 def download_and_evaluate_model(
@@ -48,7 +39,8 @@ def download_and_evaluate_model(
     # Load the BigEarthNet v2.0 dataset
     channels = model.config.channels
     image_size = model.config.image_size
-    data_dirs = resolve_data_dir(BENv2_DIR_DICT, allow_mock=True)
+    hostname, data_dirs = get_benv2_dir_dict()
+    data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
     dm = BENv2DataModule(
         data_dirs=data_dirs,
         batch_size=batch_size,
