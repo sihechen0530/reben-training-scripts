@@ -21,6 +21,7 @@ numpy = "^1.26.4"
 # name = "pytorch-gpu-src"
 # url = "https://download.pytorch.org/whl/cu118"
 # priority = "explicit"
+blosc2 = "^2.7.0"
 
 [build-system]
 requires = ["poetry-core"]

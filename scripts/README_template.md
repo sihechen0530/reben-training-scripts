@@ -29,7 +29,7 @@ widget:
 :---:|:---:|:---:|:---:|:---:
 <a href="https://www.tu.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/tu-berlin-logo-long-red.svg" style="font-size: 1rem; height: 2em; width: auto" alt="TU Berlin Logo"/>  |  <a href="https://rsim.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/RSiM_Logo_1.png" style="font-size: 1rem; height: 2em; width: auto" alt="RSiM Logo"> | <a href="https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/DIMA.png" style="font-size: 1rem; height: 2em; width: auto" alt="DIMA Logo"> | <a href="http://www.bigearth.eu/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/BigEarth.png" style="font-size: 1rem; height: 2em; width: auto" alt="BigEarth Logo"> | <a href="https://bifold.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/BIFOLD_Logo_farbig.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="BIFOLD Logo">
 
-# <MODEL_NAME> pretained on <DATASET_NAME> using <BANDS_USED> bands
+# <MODEL_NAME> pretrained on <DATASET_NAME> using <BANDS_USED> bands
 
 <!-- Optional images -->
 <!--
