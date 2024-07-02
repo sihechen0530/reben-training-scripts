@@ -85,7 +85,7 @@ def main(
     trainer = default_trainer(hparams, use_wandb, test_run)
 
     hostname, data_dirs = get_benv2_dir_dict()
-    data_dirs = resolve_data_dir(data_dirs, allow_mock=True)
+    data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
     dm = default_dm(hparams, data_dirs, img_size)
 
     trainer.fit(model, dm)

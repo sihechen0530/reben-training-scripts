@@ -35,7 +35,7 @@ BENv2_DIR_DICT_PLUTO = {
 
 BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
 BENv2_DIR_DICT_DEFAULT = {
-    "images_lmdb": BENv2_DIR_DEFAULT / "BigEarthNet-V2-LMDB",
+    "images_lmdb": BENv2_DIR_DEFAULT / "BENv2.lmdb",
     "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
     "metadata_snow_cloud_parquet": BENv2_DIR_DEFAULT / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
