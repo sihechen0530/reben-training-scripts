@@ -1,21 +1,16 @@
-# Training for BigEarthNet v2.0 (reBEN)
+# Training Script for BigEarthNet v2.0 (reBEN)
 
-<a href="https://www.tu.berlin/"><img src="_res/img/logos/TU-Berlin.svg" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="TU Berlin Logo"/>
-<img height="2em" hspace="10em"/>
-<a href="https://rsim.berlin/"><img src="_res/img/logos/RSiM.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="RSiM Logo"/>
-<img height="2em" hspace="10em"/>
-<a href="https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/"><img src="_res/img/logos/DIMA.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="DIMA Logo"/>
-<img height="2em" hspace="10em"/>
-<a href="http://bigearth.net/"><img src="_res/img/logos/BigEarth.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="BigEarth Logo"/>
-<img height="2em" hspace="10em"/>
-<a href="https://bifold.berlin/"><img src="_res/img/logos/bifold.png" style="font-size: 1rem; height: 2em; width: auto; margin-right: 1em" alt="BIFOLD Logo"/>
+[TU Berlin](https://www.tu.berlin/) | [RSiM](https://rsim.berlin/) | [DIMA](https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/) | [BigEarth](http://www.bigearth.eu/) | [BIFOLD](https://bifold.berlin/)
+:---:|:---:|:---:|:---:|:---:
+<a href="https://www.tu.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/tu-berlin-logo-long-red.svg"> |  <a href="https://rsim.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/RSiM_Logo_1.png" alt="RSiM Logo"> | <a href="https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/DIMA.png" width=25em height=25em alt="DIMA Logo"> | <a href="http://www.bigearth.eu/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/BigEarth.png" alt="BigEarth Logo"> | <a href="https://bifold.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/BIFOLD_Logo_farbig.png" alt="BIFOLD Logo">
 
-[![Dataset](https://img.shields.io/badge/Dataset%20on-Zenodo-014baa.svg)](LINK PENDING)
-[![Publication arXiv](https://img.shields.io/badge/Publication%20on-arXiv-b21a1a.svg)](LINK PENDING)
-[![Publication](https://img.shields.io/badge/Publication%20on-IEEE%20Xplore-103546.svg)](LINK PENDING)
+[![Dataset](https://img.shields.io/badge/Dataset%20on-Zenodo-014baa.svg)](https://zenodo.org/records/10891137)
+[![Publication arXiv](https://img.shields.io/badge/Publication%20on-arXiv-b21a1a.svg)][arxiv]
+<!-- [![Publication](https://img.shields.io/badge/Publication%20on-IEEE%20Xplore-103546.svg)](LINK PENDING) -->
 
-<a href="http://bigearth.net/"><img src="_res/img/combined_2000_600_2020_0.jpg" style="font-size: 1rem; height: 11.3em; width: auto; margin-right: 1em" alt="BigEarth Logo"/>
-## pre-requisites
+![[BigEarthNet](http://bigearth.net/)](https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/combined_2000_600_2020_0_wide.jpg)
+
+## Pre-requisites
 
 We recommend using the pyproject.toml file to install the required dependencies based on
 [Poetry](https://python-poetry.org/). For use with Poetry, CUDA 12.x is required. To use CUDA 11.x, the commented lines
@@ -35,9 +30,9 @@ training progress.
 
 The data can be downloaded from the [BigEarthNet website](http://bigearth.net/). Extract the data to a folder and create
 an [LMDB](https://lmdb.readthedocs.io/en/release/) database using
-the [RSTensorEncoder](https://github.com/kai-tub/rs-tensor-encoder) tool. The tool can be
-downloaded from the [BigEarthNet website](http://bigearth.net/) or installed as [AppImage](www.appimage.org) from the
-[rs-tensor-encoder](https://github.com/kai-tub/rs-tensor-encoder) repository.
+the [rico-hdl](https://github.com/kai-tub/rico-hdl) tool.
+The tool can be downloaded from the [BigEarthNet website](http://bigearth.net/) or installed as an [AppImage](www.appimage.org) from the
+[rico-hdl releases page](https://github.com/kai-tub/rico-hdl/releases/latest) or as an docker image from the [GitHub container registry](https://github.com/kai-tub/rico-hdl/pkgs/container/rico-hdl).
 
 Enter the paths to the following files in the `scripts/train_BigEarthNetv2_0.py` script:
 
@@ -86,18 +81,20 @@ The following parameters can be adjusted as arguments to the script:
 The full command to train the resnet50 model as described in the BigEarthNet v2.0 paper with all bands from Sentinel-2 
 is as follows:
 
-`python train_BigEarthNetv2_0.py --no-test-run --use-wandb --upload-to-hub --architecture=resnet50 --bandconfig=s2 --bs=512 --lr=0.001`
+```bash
+python train_BigEarthNetv2_0.py --no-test-run --use-wandb --upload-to-hub --architecture=resnet50 --bandconfig=s2 --bs=512 --lr=0.001
+```
 
 This command
- - used the full dataset instead of only a few batches to test
- - logged the training progress to wandb
- - uploaded the model to the Hugging Face model hub after training and testing
- - used the resnet50 architecture
- - used only the Sentinel-2 bands
- - used a batch size of 512
- - used a learning rate of 0.001
+ - uses the full dataset instead of only a few batches to test
+ - logs the training progress to wandb
+ - uploads the model to the Hugging Face model hub after training and testing
+ - uses the resnet50 architecture
+ - uses only the Sentinel-2 bands
+ - uses a batch size of 512
+ - uses a learning rate of 0.001
 
-The trained model will be saved in the `models` directory and on huggingface. It can be loaded using
+The trained model weights are saved in the `models` directory and on huggingface. To load the model with the corresponding weights run:
 
 ```python
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
@@ -111,7 +108,30 @@ from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_Im
 
 model = BigEarthNetv2_0_ImageClassifier.from_pretrained("BIFOLD-BigEarthNetv2-0/resnet50-s2-v0.1.1")
 ```
-Note, that the model configuration is automatically loaded from the Hugging Face model hub.
 
-*Note: Not all bands from S2 are included in BigEarthNet v2.0. For details, please refer to the
-[BigEarthNet v2.0 paper](LINK TODO).
+> Note:
+> The model configuration is automatically loaded from the Hugging Face model hub.
+
+> Note:
+> Not all S2 bands are used to train and evaluate the models. For details, please refer to the
+[BigEarthNet v2.0 paper][arxiv].
+
+[arxiv]: https://arxiv.com
+
+If you use any of these models in your research, please cite the following papers:
+
+```bibtex
+CITATION FOR DATASET PAPER
+```
+
+```bibtex
+@article{hackel2024configilm,
+  title={ConfigILM: A general purpose configurable library for combining image and language models for visual question answering},
+  author={Hackel, Leonard and Clasen, Kai Norman and Demir, Beg{\"u}m},
+  journal={SoftwareX},
+  volume={26},
+  pages={101731},
+  year={2024},
+  publisher={Elsevier}
+}
+```
