@@ -1,12 +1,10 @@
 # Training Script for BigEarthNet v2.0 (reBEN)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10891137.svg)](https://doi.org/10.5281/zenodo.10891137)
+[![arXiv](https://img.shields.io/badge/arXiv-2407.03653-b31b1b.svg)](https://arxiv.org/abs/2407.03653)
 
 [TU Berlin](https://www.tu.berlin/) | [RSiM](https://rsim.berlin/) | [DIMA](https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/) | [BigEarth](http://www.bigearth.eu/) | [BIFOLD](https://bifold.berlin/)
 :---:|:---:|:---:|:---:|:---:
 <a href="https://www.tu.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/tu-berlin-logo-long-red.svg" width=150em></a> |  <a href="https://rsim.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/RSiM_Logo_1.png" alt="RSiM Logo" width=100em></a> | <a href="https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/DIMA.png" width=50em height=50em alt="DIMA Logo"></a> | <a href="http://www.bigearth.eu/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/BigEarth.png" alt="BigEarth Logo" width=150em></a> | <a href="https://bifold.berlin/"><img src="https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/BIFOLD_Logo_farbig.png" alt="BIFOLD Logo" width=150em></a>
-
-[![Dataset](https://img.shields.io/badge/Dataset%20on-Zenodo-014baa.svg)](https://zenodo.org/records/10891137)
-[![Publication arXiv](https://img.shields.io/badge/Publication%20on-arXiv-b21a1a.svg)][arxiv]
-<!-- [![Publication](https://img.shields.io/badge/Publication%20on-IEEE%20Xplore-103546.svg)](LINK PENDING) -->
 
 ![[BigEarthNet](http://bigearth.net/)](https://raw.githubusercontent.com/wiki/lhackel-tub/ConfigILM/static/imgs/combined_2000_600_2020_0_wide.jpg)
 
@@ -118,10 +116,18 @@ model = BigEarthNetv2_0_ImageClassifier.from_pretrained("BIFOLD-BigEarthNetv2-0/
 
 [arxiv]: https://arxiv.com
 
-If you use any of these models in your research, please cite the following papers:
+If you use this work, please cite:
 
 ```bibtex
-CITATION FOR DATASET PAPER
+@article{clasen2024refinedbigearthnet,
+  title={reBEN: Refined BigEarthNet Dataset for Remote Sensing Image Analysis},
+  author={Clasen, Kai Norman and Hackel, Leonard and Burgert, Tom and Sumbul, Gencer and Demir, Beg{\"u}m and Markl, Volker},
+  year={2024},
+  eprint={2407.03653},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+  url={https://arxiv.org/abs/2407.03653},
+}
 ```
 
 ```bibtex
