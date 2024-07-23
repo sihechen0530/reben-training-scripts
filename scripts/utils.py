@@ -55,6 +55,18 @@ def get_benv2_dir_dict() -> tuple[str, dict]:
 
 
 def _infere_example(S1_file: str, S2_file: str, bands: list[str], model: BigEarthNetv2_0_ImageClassifier):
+    """
+    Infere an example image using the given model and the specified bands.
+
+    Note: This function is only used for generating the README.md file and should not be used for actual inference.
+          There is no normalization applied to the input image, so the results might not be accurate and the individual
+          loading of tiff files is not optimized for speed.
+    :param S1_file: path to the Sentinel-1 image directory
+    :param S2_file: path to the Sentinel-2 image directory
+    :param bands: list of bands to use for the inference, e.g. ["B02", "B03", "B04"] for BGR input
+    :param model: torch model to use for the inference
+    :return: (results, input_rgb) where results is a dictionary with the class scores and input_rgb is the input image
+    """
     import rasterio
     from configilm.extra.BENv2_utils import stack_and_interpolate, NEW_LABELS
     data = {}
@@ -79,6 +91,9 @@ def _infere_example(S1_file: str, S2_file: str, bands: list[str], model: BigEart
 
     # stack the bands to a 3D tensor based on the order of the bands
     img = stack_and_interpolate(data, order=bands, img_size=120, upsample_mode="nearest").unsqueeze(0)
+
+    ### NOTE: At this point, the image is not normalized, so the results might not be accurate
+    ### For actual inference, the data should be normalized using the same values as in the training data at this point
 
     # infer the image
     model.eval()
