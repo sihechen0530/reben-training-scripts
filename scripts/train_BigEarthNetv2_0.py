@@ -41,7 +41,7 @@ def main(
     img_size = 120
 
     # HUGGINGFACE MODEL PARAMETERS
-    version = "v0.1.1"
+    version = "v0.2.0"
     if upload_to_hub and hf_entity is None:
         raise ValueError("Please specify a Huggingface entity to upload the model to.")
 

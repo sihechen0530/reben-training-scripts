@@ -17,7 +17,7 @@ in the pyproject.toml file have to be uncommented. To install the dependencies u
 Otherwise, the following dependencies are required:
 
 - Python 3.9 - 3.12 (e.g. install with `sudo apt install python3.10`)
-- configilm[full] (e.g. install with `pip install configilm[full]~=0.6.6`) 0.6.6 or higher
+- configilm[full] (e.g. install with `pip install configilm[full]~=0.7.0`) 0.7.0 or higher
 - wandb (e.g. install with `pip install wandb`)
 - numpy 1.x (e.g. install with `pip install numpy~=1.26.4`)
 
