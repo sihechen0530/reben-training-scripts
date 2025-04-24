@@ -1,6 +1,6 @@
 # Training Script for BigEarthNet v2.0 (reBEN)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10891137.svg)](https://doi.org/10.5281/zenodo.10891137)
-[![arXiv](https://img.shields.io/badge/arXiv-2407.03653-b31b1b.svg)](https://arxiv.org/abs/2407.03653)
+[![arXiv](https://img.shields.io/badge/arXiv-2407.03653-b31b1b.svg)][arxiv]
 
 [TU Berlin](https://www.tu.berlin/) | [RSiM](https://rsim.berlin/) | [DIMA](https://www.dima.tu-berlin.de/menue/database_systems_and_information_management_group/) | [BigEarth](http://www.bigearth.eu/) | [BIFOLD](https://bifold.berlin/)
 :---:|:---:|:---:|:---:|:---:
@@ -114,21 +114,23 @@ model = BigEarthNetv2_0_ImageClassifier.from_pretrained("BIFOLD-BigEarthNetv2-0/
 > Not all S2 bands are used to train and evaluate the models. For details, please refer to the
 [BigEarthNet v2.0 paper][arxiv].
 
-[arxiv]: https://arxiv.com
-
 If you use this work, please cite:
 
+> K. Clasen, L. Hackel, T. Burgert, G. Sumbul, B. Demir, V. Markl, "[reBEN: Refined BigEarthNet Dataset for Remote Sensing Image Analysis][arxiv]", IEEE International Geoscience and Remote Sensing Symposium (IGARSS), 2025.
+
+
 ```bibtex
-@article{clasen2024refinedbigearthnet,
-  title={reBEN: Refined BigEarthNet Dataset for Remote Sensing Image Analysis},
+@inproceedings{clasen2025refinedbigearthnet,
+  title={{reBEN}: Refined BigEarthNet Dataset for Remote Sensing Image Analysis},
   author={Clasen, Kai Norman and Hackel, Leonard and Burgert, Tom and Sumbul, Gencer and Demir, Beg{\"u}m and Markl, Volker},
-  year={2024},
-  eprint={2407.03653},
-  archivePrefix={arXiv},
-  primaryClass={cs.CV},
-  url={https://arxiv.org/abs/2407.03653},
+  year={2025},
+  booktitle={IEEE International Geoscience and Remote Sensing Symposium (IGARSS)},
 }
 ```
+
+[arxiv]: https://arxiv.org/abs/2407.03653
+
+> L. Hackel, K. Clasen, B. Demir, "ConfigILM: A General Purpose Configurable Library for Combining Image and Language Models for Visual Question Answering.", SoftwareX 26 (2024): 101731.
 
 ```bibtex
 @article{hackel2024configilm,
