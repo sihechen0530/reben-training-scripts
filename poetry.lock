@@ -508,15 +508,15 @@ files = [
 
 [[package]]
 name = "configilm"
-version = "0.7.0"
+version = "0.7.1"
 description = "A state-of-the-art tool for Python developers seeking to rapidly and iteratively develop vision and language models within the [`pytorch`](https://pytorch.org/) framework"
 optional = false
 python-versions = "<3.12,>=3.9"
 groups = ["main"]
 markers = "python_version <= \"3.11\""
 files = [
-    {file = "configilm-0.7.0-py3-none-any.whl", hash = "sha256:cbdeddf1e6019d09ac06354b05d8dae9933d9c7e10c4d3691a1246198a1a680b"},
-    {file = "configilm-0.7.0.tar.gz", hash = "sha256:967916424b9f179cc12870ca26694543a7a24bea360a4dbe624ae0fa16e1ecf3"},
+    {file = "configilm-0.7.1-py3-none-any.whl", hash = "sha256:54e8c2424c55bb4e68dfda07593e155e9ecfa6c60b50585c4b378076934cf5e3"},
+    {file = "configilm-0.7.1.tar.gz", hash = "sha256:c6d28dfbc91e32ffa764b20ddcb990ec45b79231e4de9f67330dea5701a85e4c"},
 ]
 
 [package.dependencies]
@@ -527,7 +527,7 @@ lmdb = {version = ">=1.4.0,<2.0.0", optional = true, markers = "extra == \"bigea
 numpy = ">=1.21.5,<2.0.0"
 pyarrow = {version = ">=12.0.1,<13.0.0", optional = true, markers = "extra == \"bigearthnet\" or extra == \"full-pytorch-lightning\" or extra == \"full-lightning\" or extra == \"full\""}
 pydantic = {version = ">=1.8,<2.0", optional = true, markers = "extra == \"bigearthnet\" or extra == \"full-pytorch-lightning\" or extra == \"full-lightning\" or extra == \"full\""}
-timm = ">=0.9.2,<0.10.0"
+timm = ">=1.0,<2.0"
 torch = ">=2.0.0,<2.0.1 || >2.0.1,<2.1.0 || >2.1.0"
 transformers = ">=4.26.0,<5.0.0"
 
@@ -2819,15 +2819,15 @@ dev = ["hypothesis (>=6.70.0)", "pytest (>=7.1.0)"]
 
 [[package]]
 name = "timm"
-version = "0.9.16"
+version = "1.0.15"
 description = "PyTorch Image Models"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "python_version <= \"3.11\""
 files = [
-    {file = "timm-0.9.16-py3-none-any.whl", hash = "sha256:bf5704014476ab011589d3c14172ee4c901fd18f9110a928019cac5be2945914"},
-    {file = "timm-0.9.16.tar.gz", hash = "sha256:891e54f375d55adf31a71ab0c117761f0e472f9f3971858ecdd1e7376b7071e6"},
+    {file = "timm-1.0.15-py3-none-any.whl", hash = "sha256:5a3dc460c24e322ecc7fd1f3e3eb112423ddee320cb059cc1956fbc9731748ef"},
+    {file = "timm-1.0.15.tar.gz", hash = "sha256:756a3bc30c96565f056e608a9b559daed904617eaadb6be536f96874879b1055"},
 ]
 
 [package.dependencies]
