@@ -8,9 +8,8 @@ from configilm.extra.BENv2_utils import STANDARD_BANDS
 from configilm.extra.DataModules.BENv2_DataModule import BENv2DataModule
 from huggingface_hub import HfApi
 from lightning.pytorch.loggers import WandbLogger
-from torchvision import transforms
-
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
+from torchvision import transforms
 
 BENv2_DIR_MARS = Path("/data/kaiclasen")
 BENv2_DIR_DICT_MARS = {
@@ -26,11 +25,11 @@ BENv2_DIR_DICT_ERDE = {
     "metadata_snow_cloud_parquet": BENv2_DIR_ERDE / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_PLUTO = Path("/home/kaiclasen/bigearthnet-pipeline/artifacts")
+BENv2_DIR_PLUTO = Path("/data_read_only/BigEarthNet/BigEarthNet-V2/")
 BENv2_DIR_DICT_PLUTO = {
-    "images_lmdb": BENv2_DIR_PLUTO / "artifacts-lmdb" / "BigEarthNet-V2",
-    "metadata_parquet": BENv2_DIR_PLUTO / "artifacts-result" / "metadata.parquet",
-    "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "artifacts-result" / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
+    "images_lmdb": BENv2_DIR_PLUTO / "BENv2.lmdb",
+    "metadata_parquet": BENv2_DIR_PLUTO / "metadata.parquet",
+    "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
 BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
@@ -41,7 +40,7 @@ BENv2_DIR_DICT_DEFAULT = {
 }
 
 BENv2_DIR_DICTS = {
-    'mars.rsim.tu-berlin.de': BENv2_DIR_DICT_MARS,
+    'mars': BENv2_DIR_DICT_MARS,
     'erde': BENv2_DIR_DICT_ERDE,
     'pluto': BENv2_DIR_DICT_PLUTO,
     'default': BENv2_DIR_DICT_DEFAULT,
