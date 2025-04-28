@@ -93,21 +93,22 @@ model = BigEarthNetv2_0_ImageClassifier.from_pretrained(
 ```
 
 If you use this model in your research or the provided code, please cite the following papers:
+> K. Clasen, L. Hackel, T. Burgert, G. Sumbul, B. Demir, V. Markl, "[reBEN: Refined BigEarthNet Dataset for Remote Sensing Image Analysis][arxiv]", IEEE International Geoscience and Remote Sensing Symposium (IGARSS), 2025.
 ```bibtex
-@article{clasen2024refinedbigearthnet,
-  title={reBEN: Refined BigEarthNet Dataset for Remote Sensing Image Analysis},
-  author={Clasen, Kai Norman and Hackel, Leonard and Burgert, Tom and Sumbul, Gencer and Demir, Beg{\"u}m and Markl, Volker},
-  year={2024},
-  eprint={2407.03653},
-  archivePrefix={arXiv},
-  primaryClass={cs.CV},
-  url={https://arxiv.org/abs/2407.03653},
+@inproceedings{clasen2025refinedbigearthnet,
+  title={{reBEN}: Refined BigEarthNet Dataset for Remote Sensing Image Analysis},
+  author={Clasen, Kai Norman and Hackel, Leonard and Burgert, Tom and Sumbul, Gencer and Demir, Beg{"u}m and Markl, Volker},
+  year={2025},
+  booktitle={IEEE International Geoscience and Remote Sensing Symposium (IGARSS)},
 }
 ```
+[arxiv]: https://arxiv.org/abs/2407.03653
+
+> L. Hackel, K. Clasen, B. Demir, "ConfigILM: A General Purpose Configurable Library for Combining Image and Language Models for Visual Question Answering.", SoftwareX 26 (2024): 101731.
 ```bibtex
 @article{hackel2024configilm,
   title={ConfigILM: A general purpose configurable library for combining image and language models for visual question answering},
-  author={Hackel, Leonard and Clasen, Kai Norman and Demir, Beg{\"u}m},
+  author={Hackel, Leonard and Clasen, Kai Norman and Demir, Beg{"u}m},
   journal={SoftwareX},
   volume={26},
   pages={101731},
