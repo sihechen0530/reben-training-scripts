@@ -1,5 +1,13 @@
+import sys
 from warnings import warn
 from pathlib import Path
+
+# Add parent directory to path to allow importing reben_publication
+# This allows running from the scripts directory
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 import lightning.pytorch as pl
 import torch
@@ -23,6 +31,8 @@ def get_arch_version_bandconfig(model_name: str, config: ILMConfiguration):
         assert config.channels == 2, f"Bandconfig {bandconfig} does not match config {config.channels}"
     elif bandconfig == "all":
         assert config.channels == 12, f"Bandconfig {bandconfig} does not match config {config.channels}"
+    elif bandconfig == "rgb":
+        assert config.channels == 3, f"Bandconfig {bandconfig} does not match config {config.channels}"
     else:
         raise ValueError(f"Unknown band configuration {bandconfig}")
     return architecture, version, bandconfig

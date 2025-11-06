@@ -1,6 +1,15 @@
 """
 This script loads a pretrained model from the Huggingface Hub and evaluates it on a random input.
 """
+import sys
+from pathlib import Path
+
+# Add parent directory to path to allow importing reben_publication
+# This allows running from the scripts directory
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 import torch
 from huggingface_hub import HfApi
