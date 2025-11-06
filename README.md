@@ -47,8 +47,9 @@ The script will train the model and log the progress to wandb.
 
 The following parameters can be adjusted as arguments to the script:
 
-- `--architectures` (default: `resnet18`) The architectures to train. Many architectures from the `timm` library are
-  supported.
+- `--architecture` (default: `resnet18`) The architectures to train. Many architectures from the `timm` library are
+  supported. DINOv3 models are also supported: use `dinov3-small` (or `dinov3-s`), `dinov3-base` (or `dinov3-b`), 
+  `dinov3-large` (or `dinov3-l`), or `dinov3-giant` (or `dinov3-g`). See `DINOV3_USAGE.md` for more details on DINOv3 usage.
 - `--seed` (default: `42`) The seed to use for the random number generators.
 - `--lr` (default: `1e-3`) The learning rate to use for training for the optimizers `AdamW`.
 - `--epochs` (default: `100`) The number of epochs to train for.

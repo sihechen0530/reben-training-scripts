@@ -15,6 +15,13 @@ from configilm.extra.CustomTorchClasses import LinearWarmupCosineAnnealingLR
 from configilm.metrics import get_classification_metric_collection
 from huggingface_hub import PyTorchModelHubMixin
 
+# DINOv3 support
+try:
+    from reben_publication.DINOv3Backbone import DINOv3Backbone
+    DINOV3_AVAILABLE = True
+except ImportError:
+    DINOV3_AVAILABLE = False
+
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
@@ -32,14 +39,86 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             config: ILMConfiguration,
             lr: float = 1e-3,
             warmup: Optional[int] = None,
+            dinov3_model_name: Optional[str] = None,
+            linear_probe: bool = False,
     ):
         super().__init__()
         self.lr = lr
         self.warmup = None if warmup is None or warmup < 0 else warmup
         self.config = config
+        self.linear_probe = linear_probe
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
         assert config.classes == 19
-        self.model = ConfigILM.ConfigILM(config)
+        
+        # Check if DINOv3 is requested
+        use_dinov3 = (
+            DINOV3_AVAILABLE and 
+            (dinov3_model_name is not None or
+             (hasattr(config, 'timm_model_name') and 
+              config.timm_model_name is not None and
+              config.timm_model_name.startswith('dinov3')))
+        )
+        
+        if use_dinov3:
+            if not DINOV3_AVAILABLE:
+                raise ImportError(
+                    "DINOv3 requested but not available. "
+                    "Install transformers: pip install transformers"
+                )
+            
+            # Determine DINOv3 model name
+            if dinov3_model_name is None:
+                # Try to infer from timm_model_name
+                # DINOv3 uses specific naming: facebook/dinov3-vit{s|b|l|g}16-pretrain-lvd1689m
+                timm_name = getattr(config, 'timm_model_name', 'dinov3')
+                if 'small' in timm_name.lower() or 's' in timm_name.lower():
+                    dinov3_model_name = "facebook/dinov3-vits16-pretrain-lvd1689m"
+                elif 'base' in timm_name.lower() or 'b' in timm_name.lower():
+                    dinov3_model_name = "facebook/dinov3-vitb16-pretrain-lvd1689m"
+                elif 'large' in timm_name.lower() or 'l' in timm_name.lower():
+                    dinov3_model_name = "facebook/dinov3-vitl16-pretrain-lvd1689m"
+                elif 'giant' in timm_name.lower() or 'g' in timm_name.lower():
+                    dinov3_model_name = "facebook/dinov3-vitg16-pretrain-lvd1689m"
+                else:
+                    # Default to small
+                    dinov3_model_name = "facebook/dinov3-vits16-pretrain-lvd1689m"
+            
+            print(f"Using DINOv3 backbone: {dinov3_model_name}")
+            self.model = DINOv3Backbone(
+                model_name=dinov3_model_name,
+                num_classes=config.classes,
+                num_input_channels=config.channels,
+                image_size=config.image_size,
+                drop_rate=getattr(config, 'drop_rate', 0.15),
+                drop_path_rate=getattr(config, 'drop_path_rate', 0.0),
+                pretrained=True,
+            )
+            # If linear probing, freeze backbone parameters
+            if self.linear_probe:
+                for p in self.model.backbone.parameters():
+                    p.requires_grad = False
+                # Ensure classifier remains trainable
+                for p in self.model.classifier.parameters():
+                    p.requires_grad = True
+                # Keep the input adaptation layer (patch embedding projection) trainable
+                try:
+                    proj = None
+                    if hasattr(self.model.backbone, 'embeddings') and hasattr(self.model.backbone.embeddings, 'patch_embeddings'):
+                        pe = self.model.backbone.embeddings.patch_embeddings
+                        if hasattr(pe, 'projection'):
+                            proj = pe.projection
+                        elif isinstance(pe, torch.nn.Conv2d):
+                            proj = pe
+                    # Unfreeze projection parameters if found
+                    if proj is not None:
+                        for p in proj.parameters():
+                            p.requires_grad = True
+                except Exception:
+                    # If adaptation layer is not found, silently continue
+                    pass
+        else:
+            # Use standard ConfigILM with timm models
+            self.model = ConfigILM.ConfigILM(config)
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
         self.loss = torch.nn.BCEWithLogitsLoss()
@@ -80,7 +159,29 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         return {"loss": loss}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.01)
+        # If linear probing with DINOv3, optimize classifier head and the input adaptation layer
+        if hasattr(self, "model") and hasattr(self.model, "backbone") and hasattr(self.model, "classifier") and self.linear_probe:
+            param_groups = [
+                {"params": list(self.model.classifier.parameters())}
+            ]
+            # Add patch embedding projection if present
+            try:
+                proj = None
+                if hasattr(self.model.backbone, 'embeddings') and hasattr(self.model.backbone.embeddings, 'patch_embeddings'):
+                    pe = self.model.backbone.embeddings.patch_embeddings
+                    if hasattr(pe, 'projection'):
+                        proj = pe.projection
+                    elif isinstance(pe, torch.nn.Conv2d):
+                        proj = pe
+                if proj is not None:
+                    proj_params = [p for p in proj.parameters() if p.requires_grad]
+                    if len(proj_params) > 0:
+                        param_groups.append({"params": proj_params})
+            except Exception:
+                pass
+            optimizer = torch.optim.AdamW(param_groups, lr=self.lr, weight_decay=0.01)
+        else:
+            optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.01)
 
         # these are steps if interval is set to step
         max_intervals = int(

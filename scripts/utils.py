@@ -32,7 +32,7 @@ BENv2_DIR_DICT_PLUTO = {
     "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_DEFAULT = Path("~/data/BigEarthNet-V2").expanduser()
+BENv2_DIR_DEFAULT = Path("/projects/SuperResolutionData/sihe.chen/remote_sensing_mock")
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BENv2.lmdb",
     "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
@@ -106,14 +106,26 @@ def _infere_example(S1_file: str, S2_file: str, bands: list[str], model: BigEart
     if img.shape[1] == 2:
         # S1 image, add VV/VH as third channel
         img = torch.cat([img[:, 0], img[:, 1], img[:, 0, :, :] / img[:, 1, :, :]]).unsqueeze(0)
+        input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :]
+    elif img.shape[1] == 3:
+        # RGB image, already in correct format (B04, B03, B02) = (R, G, B)
+        # No reordering needed - already in RGB display order
+        input_rgb = img.squeeze().numpy()
     elif img.shape[1] == 10:
-        # S2 image, use only first 3 bands
+        # S2 image, use only first 3 bands (B02, B03, B04) = (B, G, R)
+        # Reorder to (B04, B03, B02) = (R, G, B) for RGB display
         img = img[:, :3]
+        input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :]
     elif img.shape[1] == 12:
-        # S2 + S1 image, use only first 3 bands of S2
+        # S2 + S1 image, use only first 3 bands of S2 (B02, B03, B04) = (B, G, R)
+        # Reorder to (B04, B03, B02) = (R, G, B) for RGB display
         img = img[:, :3]
-
-    input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :]
+        input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :]
+    else:
+        # Fallback: assume first 3 channels and try to display
+        num_channels = img.shape[1]
+        img = img[:, :3] if num_channels > 3 else img
+        input_rgb = img.squeeze().numpy()[[2, 1, 0], :, :] if num_channels >= 3 else img.squeeze().numpy()
     return results, input_rgb
 
 
@@ -128,6 +140,7 @@ def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch
     architecture = architecture_raw.capitalize()
     bands_used = "Sentinel-1 & Sentinel-2" if bandconfig == "all" \
         else "Sentinel-2" if bandconfig == "s2" \
+        else "Sentinel-2 (RGB)" if bandconfig == "rgb" \
         else "Sentinel-1"
 
     template = template.replace("<BAND_CONFIG>", bandconfig)
@@ -160,6 +173,9 @@ def generate_readme(model_name: str, results: dict, hparams: dict, current_epoch
     elif bandconfig == "s1":
         bands = STANDARD_BANDS[2]  # Sentinel-1
         vis_bands = "A Sentinel-1 image (VV, VH and VV/VH bands are used for visualization)"
+    elif bandconfig == "rgb":
+        bands = ["B04", "B03", "B02"]  # RGB true color
+        vis_bands = "A Sentinel-2 RGB image (true color representation using B04, B03, B02)"
     else:
         raise ValueError(f"Unsupported band configuration {bandconfig}")
     template = template.replace("<VIS_BANDS>", vis_bands)
@@ -194,10 +210,14 @@ def get_bands(bandconfig: str):
         bands = STANDARD_BANDS["S2"]
     elif bandconfig == "s1_full":
         bands = STANDARD_BANDS["S1"]
+    elif bandconfig == "rgb":
+        # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
+        bands = ["B04", "B03", "B02"]
     else:
         raise ValueError(
-            f"Unknown band configuration {bandconfig}, select one of all, s2, s1 or all_full, s2_full, s1_full. The "
-            f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands."
+            f"Unknown band configuration {bandconfig}, select one of all, s2, s1, rgb or all_full, s2_full, s1_full. The "
+            f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands. "
+            f"rgb uses 3-channel RGB (B04, B03, B02) from Sentinel-2."
         )
     return bands, len(bands)
 
