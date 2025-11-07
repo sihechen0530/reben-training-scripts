@@ -44,7 +44,7 @@ BENv2_DIR_DICT_PLUTO = {
     "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_DEFAULT = Path("/projects/SuperResolutionData/sihe.chen/remote_sensing_mock")
+BENv2_DIR_DEFAULT = Path("/home/liu.guoy/remote_sensing_mock")
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BENv2.lmdb",
     "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
