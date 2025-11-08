@@ -19,6 +19,56 @@ python train_multimodal.py \
     --resnet-pretrained
 ```
 
+### 1.1. 从头训练两个backbone（不使用预训练权重）
+
+**方法1：使用便捷脚本（推荐）**
+
+```bash
+# Python脚本（跨平台）
+python train_multimodal_from_scratch.py
+
+# 或使用shell脚本（Linux/Mac）
+bash train_multimodal_from_scratch.sh
+```
+
+**方法2：直接使用主训练脚本**
+
+```bash
+python train_multimodal.py \
+    --seed 42 \
+    --lr 0.001 \
+    --epochs 100 \
+    --bs 32 \
+    --dinov3-model-name "facebook/dinov3-vitb16-pretrain-lvd1689m" \
+    --no-dinov3-pretrained \
+    --no-dinov3-freeze \
+    --dinov3-lr 1e-4 \
+    --no-resnet-pretrained \
+    --no-resnet-freeze \
+    --resnet-lr 1e-4
+```
+
+**方法3：使用预训练权重但允许fine-tuning（两个backbone都训练）**
+
+```bash
+# 使用便捷脚本
+bash train_multimodal_from_scratch_pretrained.sh
+
+# 或直接使用主训练脚本
+python train_multimodal.py \
+    --seed 42 \
+    --lr 0.001 \
+    --epochs 100 \
+    --bs 32 \
+    --dinov3-model-name "facebook/dinov3-vitb16-pretrain-lvd1689m" \
+    --dinov3-pretrained \
+    --no-dinov3-freeze \
+    --dinov3-lr 1e-4 \
+    --resnet-pretrained \
+    --no-resnet-freeze \
+    --resnet-lr 1e-4
+```
+
 ### 2. 从checkpoint加载backbone权重（冻结参数）
 
 从已有的checkpoint文件加载DINOv3 backbone权重并冻结：
