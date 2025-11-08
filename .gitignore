@@ -3,5 +3,6 @@ checkpoints/
 wandb/
 hf_models/
 _data/
+logs
 
 *.pyc
