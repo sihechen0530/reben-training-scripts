@@ -90,11 +90,32 @@ def verify_data_stacking(include_s1: bool = False):
     # Setup dataloader
     dm.setup("fit")
     
-    # Get a sample
+    # IMPORTANT: Disable shuffle to ensure deterministic sample order
+    # This ensures we can load the same sample from both dataloaders
+    if hasattr(dm, 'shuffle'):
+        dm.shuffle = False
+    # Also try to set shuffle in train_dataloader if possible
+    original_train_dataloader = dm.train_dataloader
+    def train_dataloader_no_shuffle():
+        loader = original_train_dataloader()
+        if hasattr(loader, 'sampler') and hasattr(loader.sampler, 'shuffle'):
+            loader.sampler.shuffle = False
+        return loader
+    dm.train_dataloader = train_dataloader_no_shuffle
+    
+    # Get a sample - use index 0 to ensure we can get the same sample later
     print("Loading a sample from the dataloader...")
     train_loader = dm.train_dataloader()
     sample = next(iter(train_loader))
     x, y = sample
+    
+    # Also get the raw sample from dataset to ensure we use the same one
+    sample_idx = 0
+    raw_sample = dm.train_ds[sample_idx]
+    if isinstance(raw_sample, tuple):
+        x_raw = raw_sample[0]
+    else:
+        x_raw = raw_sample
     
     print(f"Loaded tensor shape: {x.shape}")
     print(f"Expected shape: (1, {num_channels}, 120, 120)")
@@ -167,13 +188,26 @@ def verify_data_stacking(include_s1: bool = False):
     print("-" * 80)
     
     # Step 1: Extract RGB from the multi-channel data (as done in Lightning module)
-    rgb_extracted = x[:, :3, :, :]
-    print(f"\n1. Extracted RGB from multi-channel data:")
-    print(f"   Shape: {rgb_extracted.shape}")
-    print(f"   Mean: {rgb_extracted.mean().item():.4f}, Std: {rgb_extracted.std().item():.4f}")
+    # But we need to compare with RAW values, not transformed values
+    # So let's also get the raw multi-channel data
+    rgb_extracted_from_transformed = x[:, :3, :, :]
     
-    # Step 2: Load RGB data directly (only RGB bands)
-    print(f"\n2. Loading RGB data directly (only B04, B03, B02)...")
+    # Get raw RGB from the original raw sample (before transforms)
+    if len(x_raw.shape) == 3:
+        rgb_extracted_raw = x_raw[:3, :, :].unsqueeze(0)
+    else:
+        rgb_extracted_raw = x_raw[:, :3, :, :]
+    
+    print(f"\n1. Extracted RGB from multi-channel data:")
+    print(f"   From transformed data:")
+    print(f"     Shape: {rgb_extracted_from_transformed.shape}")
+    print(f"     Mean: {rgb_extracted_from_transformed.mean().item():.4f}, Std: {rgb_extracted_from_transformed.std().item():.4f}")
+    print(f"   From raw data (before transforms):")
+    print(f"     Shape: {rgb_extracted_raw.shape}")
+    print(f"     Mean: {rgb_extracted_raw.mean().item():.4f}, Std: {rgb_extracted_raw.std().item():.4f}")
+    
+    # Step 2: Load RGB data directly (only RGB bands) from the SAME sample
+    print(f"\n2. Loading RGB data directly (only B04, B03, B02) from the SAME sample...")
     
     # Register RGB-only configuration
     rgb_only_bands = ["B04", "B03", "B02"]
@@ -182,61 +216,107 @@ def verify_data_stacking(include_s1: bool = False):
     BENv2DataSet.channel_configurations[rgb_num_channels] = rgb_only_bands
     BENv2DataSet.avail_chan_configs[rgb_num_channels] = "RGB only (B04, B03, B02)"
     
-    # Create a new data module for RGB-only data
-    dm_rgb = BENv2DataModule(
-        data_dirs=data_dirs,
-        batch_size=1,
-        num_workers_dataloader=0,
-        img_size=(rgb_num_channels, 120, 120),
-    )
-    dm_rgb.setup("fit")
+    # IMPORTANT: Load the SAME sample using the same index
+    # Create a new dataset with RGB-only configuration, using the same sample index
+    from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet as BENv2DS
     
-    # Get the same sample (using same index)
-    train_loader_rgb = dm_rgb.train_dataloader()
-    # Get the same sample by iterating to the same position
-    # Note: We'll use the first sample, which should be the same if data is deterministic
-    sample_rgb = next(iter(train_loader_rgb))
-    x_rgb, y_rgb = sample_rgb
+    try:
+        # Create RGB-only dataset - use the same split and data dirs
+        # Get split from original dataset
+        split = "train"  # Default
+        if hasattr(dm.train_ds, 'split'):
+            split = dm.train_ds.split
+        
+        dataset_rgb = BENv2DS(
+            data_dirs=data_dirs,
+            split=split,
+            img_size=(rgb_num_channels, 120, 120),
+        )
+        
+        # Get the same sample by index (we already have sample_idx from above)
+        raw_sample_rgb = dataset_rgb[sample_idx]
+        if isinstance(raw_sample_rgb, tuple):
+            x_rgb_raw = raw_sample_rgb[0]
+        else:
+            x_rgb_raw = raw_sample_rgb
+        
+        # Apply the same transforms/normalization that the original dataloader applies
+        # The dataloader applies transforms, so we need to check what transforms are used
+        # For now, let's compare the raw values first to see if they match before transforms
+        
+        # Add batch dimension if needed
+        if len(x_rgb_raw.shape) == 3:
+            x_rgb = x_rgb_raw.unsqueeze(0)
+        else:
+            x_rgb = x_rgb_raw
+        
+        print(f"   Loaded sample index: {sample_idx} (same as multi-channel sample)")
+        print(f"   Note: Comparing raw values (before transforms/normalization)")
+        
+    except Exception as e:
+        print(f"   ⚠ Error loading RGB dataset: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fallback: try with dataloader but note that it might be a different sample
+        print(f"   ⚠ Falling back to dataloader method (may load different sample)")
+        dm_rgb = BENv2DataModule(
+            data_dirs=data_dirs,
+            batch_size=1,
+            num_workers_dataloader=0,
+            img_size=(rgb_num_channels, 120, 120),
+        )
+        dm_rgb.setup("fit")
+        train_loader_rgb = dm_rgb.train_dataloader()
+        sample_rgb = next(iter(train_loader_rgb))
+        x_rgb, y_rgb = sample_rgb
     
     print(f"   Shape: {x_rgb.shape}")
     print(f"   Mean: {x_rgb.mean().item():.4f}, Std: {x_rgb.std().item():.4f}")
     
-    # Step 3: Compare the two RGB tensors
-    print(f"\n3. Comparing extracted RGB vs direct RGB loading:")
+    # Step 3: Compare the two RGB tensors (compare RAW values, not transformed)
+    print(f"\n3. Comparing extracted RGB vs direct RGB loading (RAW values):")
     print("-" * 80)
     
-    # Check shapes
-    shape_match = rgb_extracted.shape == x_rgb.shape
-    print(f"   Shape match: {'✓' if shape_match else '✗'} (extracted: {rgb_extracted.shape}, direct: {x_rgb.shape})")
+    # Compare RAW values (before transforms) - this is the most reliable
+    shape_match = rgb_extracted_raw.shape == x_rgb.shape
+    print(f"   Shape match: {'✓' if shape_match else '✗'} (extracted: {rgb_extracted_raw.shape}, direct: {x_rgb.shape})")
     
     if shape_match:
-        # Compare values
-        if torch.allclose(rgb_extracted, x_rgb, atol=1e-5):
-            print(f"   ✓✓✓ VALUES MATCH EXACTLY! ✓✓✓")
+        # Compare RAW values (before transforms)
+        if torch.allclose(rgb_extracted_raw, x_rgb, atol=1e-5):
+            print(f"   ✓✓✓ RAW VALUES MATCH EXACTLY! ✓✓✓")
             print(f"   ✓ RGB extraction is CORRECT")
             print(f"   ✓ Channel order is CORRECT (B04, B03, B02 at indices 0, 1, 2)")
             rgb_extraction_verified = True
         else:
-            # Check if difference is due to normalization/transforms
-            diff = torch.abs(rgb_extracted - x_rgb)
+            # Check the difference
+            diff = torch.abs(rgb_extracted_raw - x_rgb)
             max_diff = diff.max().item()
             mean_diff = diff.mean().item()
             
-            print(f"   Values differ:")
+            print(f"   Raw values differ:")
             print(f"     Max difference: {max_diff:.6f}")
             print(f"     Mean difference: {mean_diff:.6f}")
+            
+            # Also check per-channel differences
+            for ch in range(3):
+                ch_diff = torch.abs(rgb_extracted_raw[:, ch, :, :] - x_rgb[:, ch, :, :])
+                ch_max_diff = ch_diff.max().item()
+                ch_mean_diff = ch_diff.mean().item()
+                print(f"     Channel {ch} (expected {'B04/B03/B02'[ch*4:(ch+1)*4]}): max_diff={ch_max_diff:.6f}, mean_diff={ch_mean_diff:.6f}")
             
             if max_diff < 0.01:  # Very small difference, likely numerical precision
                 print(f"   ⚠ Very small difference (likely numerical precision)")
                 print(f"   ✓ RGB extraction is LIKELY CORRECT")
                 rgb_extraction_verified = True
-            elif max_diff < 0.1:  # Small difference, might be transforms
-                print(f"   ⚠ Small difference (may be due to transforms/normalization)")
+            elif max_diff < 0.1:  # Small difference
+                print(f"   ⚠ Small difference detected")
                 print(f"   ⚠ RGB extraction is PROBABLY CORRECT")
                 rgb_extraction_verified = None
             else:
-                print(f"   ✗ Significant difference detected")
-                print(f"   ✗ RGB extraction may be INCORRECT")
+                print(f"   ✗ Significant difference detected in RAW values")
+                print(f"   ✗ This suggests RGB extraction may be INCORRECT")
+                print(f"   ✗ Please check if channel_configurations is correctly registered")
                 rgb_extraction_verified = False
     else:
         print(f"   ✗ Shape mismatch - cannot compare values")
