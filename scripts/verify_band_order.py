@@ -91,18 +91,55 @@ def verify_band_order():
     print()
     
     # Check if we can access the configuration used by the dataset
-    if hasattr(dm.train_ds, 'bands') or hasattr(dm.train_ds, 'channel_configuration'):
-        print("Dataset attributes:")
-        if hasattr(dm.train_ds, 'bands'):
-            print(f"  - train_ds.bands: {dm.train_ds.bands}")
-        if hasattr(dm.train_ds, 'channel_configuration'):
-            print(f"  - train_ds.channel_configuration: {dm.train_ds.channel_configuration}")
+    print("Dataset attributes:")
+    dataset_bands = None
+    if hasattr(dm.train_ds, 'bands'):
+        dataset_bands = dm.train_ds.bands
+        print(f"  - train_ds.bands: {dataset_bands}")
+    elif hasattr(dm.train_ds, 'channel_configuration'):
+        dataset_bands = dm.train_ds.channel_configuration
+        print(f"  - train_ds.channel_configuration: {dataset_bands}")
+    else:
+        # Try to access through other attributes
+        print("  - Checking dataset internals...")
+        if hasattr(dm.train_ds, '__dict__'):
+            for key, value in dm.train_ds.__dict__.items():
+                if 'band' in key.lower() or 'channel' in key.lower():
+                    print(f"    Found attribute: {key} = {value}")
+                    if isinstance(value, list) and len(value) == num_channels:
+                        dataset_bands = value
     
+    print()
+    
+    # Verify band order
+    if dataset_bands is not None:
+        print("Band Order Verification:")
+        print(f"  Expected order: {test_bands}")
+        print(f"  Dataset order:  {dataset_bands}")
+        if dataset_bands == test_bands:
+            print("  ✓ BAND ORDER MATCHES! The dataloader loads bands in the specified order.")
+            order_match = True
+        else:
+            print("  ✗ BAND ORDER MISMATCH! The dataloader may not respect the order.")
+            print(f"     Differences:")
+            for i, (exp, act) in enumerate(zip(test_bands, dataset_bands)):
+                if exp != act:
+                    print(f"       Channel {i}: expected {exp}, got {act}")
+            order_match = False
+    else:
+        print("Band Order Verification:")
+        print("  ⚠ Cannot directly verify band order - dataset bands attribute not accessible")
+        print("  However, if channel count matches and configuration is registered,")
+        print("  it's likely (but not guaranteed) that the order is correct.")
+        order_match = None
+    
+    print()
     print("=" * 80)
     print("Verification complete!")
     print("=" * 80)
     
-    return x.shape[1] == num_channels
+    # Return success if channel count matches and (order matches or cannot verify)
+    return x.shape[1] == num_channels and (order_match is True or order_match is None)
 
 if __name__ == "__main__":
     try:

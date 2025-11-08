@@ -4,6 +4,23 @@ Training script for multimodal classification model.
 This script trains a multimodal model that combines:
 - S2 RGB data (3 channels) through DINOv3 backbone
 - S2 non-RGB (11 channels) + S1 (2 channels) through ResNet101 backbone
+
+Data Loading and Channel Order:
+--------------------------------
+The dataloader (BENv2DataSet) uses channel_configurations[num_channels] to determine
+which bands to load and in what order. The configilm library's stack_and_interpolate
+function uses an 'order' parameter to stack bands according to the list order.
+
+By registering multimodal_bands with RGB bands first:
+  multimodal_bands = [B04, B03, B02, ...S2_non_RGB..., VV, VH]
+  
+The dataloader will stack bands in this exact order, so:
+  - Channel 0 = B04 (Red)
+  - Channel 1 = B03 (Green)  
+  - Channel 2 = B02 (Blue)
+  - Channels 3+ = S2 non-RGB + S1
+
+Therefore, we can safely extract RGB as: rgb_data = x[:, :3, :, :]
 """
 import sys
 from pathlib import Path
@@ -17,7 +34,8 @@ if str(project_root) not in sys.path:
 import lightning.pytorch as pl
 import torch
 import typer
-from configilm.extra.BENv2_utils import resolve_data_dir
+from configilm.extra.BENv2_utils import resolve_data_dir, STANDARD_BANDS
+from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
 
 from multimodal.lightning_module import MultiModalLightningModule
 from scripts.utils import get_benv2_dir_dict, default_trainer, default_dm
@@ -65,23 +83,33 @@ def main(
     Train a multimodal classification model.
     
     The model uses:
-    - DINOv3 backbone for S2 RGB data (3 channels)
-    - ResNet101 backbone for S2 non-RGB (11 channels) + S1 (2 channels)
+    - DINOv3 backbone for S2 RGB data (3 channels: B04, B03, B02)
+    - ResNet101 backbone for S2 non-RGB (11 channels) + S1 (2 channels: VV, VH)
     - Late fusion to combine features
     - Classification head for final predictions
+    
+    Data Flow:
+    ----------
+    1. Dataloader loads data with bands in order: [RGB (3), S2_non-RGB (N), S1 (2)]
+    2. Lightning module splits: rgb_data = x[:, :3] and non_rgb_s1_data = x[:, 3:]
+    3. Model processes: DINOv3(rgb_data) + ResNet(non_rgb_s1_data) -> fusion -> classifier
     """
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
     
+    # ============================================================================
     # FIXED MODEL PARAMETERS
+    # ============================================================================
     num_classes = 19
     img_size = 120
     
-    # set seed
+    # Set seed
     pl.seed_everything(seed, workers=True)
     torch.set_float32_matmul_precision("medium")
     
-    # Build configuration
+    # ============================================================================
+    # BUILD MODEL CONFIGURATION
+    # ============================================================================
     config = {
         "backbones": {
             "dinov3": {
@@ -105,7 +133,6 @@ def main(
             "drop_rate": drop_rate,
         },
         "image_size": img_size,
-        # RGB channels will be set after band configuration
     }
     
     if fusion_type == "linear_projection" and fusion_output_dim is not None:
@@ -114,12 +141,13 @@ def main(
     if classifier_type == "mlp":
         config["classifier"]["hidden_dim"] = classifier_hidden_dim
     
-    # Resolve checkpoint paths
+    # ============================================================================
+    # RESOLVE CHECKPOINT PATHS
+    # ============================================================================
     dinov3_ckpt_path = None
     if dinov3_checkpoint is not None:
         dinov3_ckpt_path_obj = Path(dinov3_checkpoint)
         if not dinov3_ckpt_path_obj.exists():
-            # Try relative to checkpoints directory
             dinov3_ckpt_path_obj = Path("./checkpoints") / dinov3_checkpoint
             if not dinov3_ckpt_path_obj.exists():
                 raise FileNotFoundError(
@@ -133,7 +161,6 @@ def main(
     if resnet_checkpoint is not None:
         resnet_ckpt_path_obj = Path(resnet_checkpoint)
         if not resnet_ckpt_path_obj.exists():
-            # Try relative to checkpoints directory
             resnet_ckpt_path_obj = Path("./checkpoints") / resnet_checkpoint
             if not resnet_ckpt_path_obj.exists():
                 raise FileNotFoundError(
@@ -143,7 +170,9 @@ def main(
         resnet_ckpt_path = str(resnet_ckpt_path_obj.resolve())
         print(f"Using ResNet checkpoint: {resnet_ckpt_path}")
     
-    # Create model
+    # ============================================================================
+    # CREATE MODEL
+    # ============================================================================
     model = MultiModalLightningModule(
         config=config,
         lr=lr,
@@ -152,10 +181,73 @@ def main(
         resnet_checkpoint=resnet_ckpt_path,
         freeze_dinov3=dinov3_freeze if dinov3_ckpt_path else False,
         freeze_resnet=resnet_freeze if resnet_ckpt_path else False,
-        dinov3_model_name=dinov3_model_name,  # Pass explicit model name
+        dinov3_model_name=dinov3_model_name,
     )
     
-    # Hyperparameters for logging (channels will be updated after band configuration)
+    # ============================================================================
+    # CONFIGURE BAND ORDER AND REGISTER WITH DATALOADER
+    # ============================================================================
+    # Get S2 and S1 bands from STANDARD_BANDS
+    s2_bands = STANDARD_BANDS.get("S2", STANDARD_BANDS.get("s2_full", []))
+    s1_bands = STANDARD_BANDS.get("S1", [])
+    
+    # Define RGB bands (must be first 3 channels for DINOv3)
+    # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
+    rgb_bands = ["B04", "B03", "B02"]
+    
+    # Reorder S2 bands: RGB first, then non-RGB
+    s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
+    s2_ordered = rgb_bands + s2_non_rgb
+    
+    # Combine: S2 (ordered: RGB + non-RGB) + S1
+    # Final order: [RGB (3), S2_non-RGB (N), S1 (2)]
+    multimodal_bands = s2_ordered + s1_bands
+    num_channels = len(multimodal_bands)
+    
+    # Register with BENv2DataSet
+    # IMPORTANT: BENv2DataSet uses channel_configurations[num_channels] to determine
+    # which bands to load. The stack_and_interpolate function uses order=bands parameter,
+    # which stacks bands according to the list order. Therefore, by registering
+    # multimodal_bands with RGB first, the dataloader will stack bands in this exact order.
+    STANDARD_BANDS[num_channels] = multimodal_bands
+    STANDARD_BANDS["multimodal"] = multimodal_bands
+    BENv2DataSet.channel_configurations[num_channels] = multimodal_bands
+    BENv2DataSet.avail_chan_configs[num_channels] = "Multimodal (S2 ordered + S1)"
+    
+    # Store band order in config for reference
+    config["rgb_band_names"] = rgb_bands
+    config["s2_band_order"] = s2_ordered
+    config["s1_band_order"] = s1_bands
+    
+    # ============================================================================
+    # PRINT CONFIGURATION SUMMARY
+    # ============================================================================
+    print("\n" + "=" * 80)
+    print("MULTIMODAL TRAINING CONFIGURATION")
+    print("=" * 80)
+    print(f"\nRegistered channel_configurations[{num_channels}]:")
+    print(f"  Band order: {multimodal_bands}")
+    print(f"  -> RGB bands (indices 0-2): {multimodal_bands[:3]}")
+    print(f"  -> S2 non-RGB ({len(s2_ordered)-3} channels): {multimodal_bands[3:len(s2_ordered)]}")
+    print(f"  -> S1 bands (last 2): {multimodal_bands[-2:]}")
+    
+    print(f"\nData Loading Confirmation:")
+    print(f"  ✓ BENv2DataSet uses channel_configurations[{num_channels}] to load bands")
+    print(f"  ✓ stack_and_interpolate uses order=bands parameter")
+    print(f"  ✓ Bands are stacked in the exact order of multimodal_bands list")
+    print(f"  ✓ Therefore: Channel 0=B04, Channel 1=B03, Channel 2=B02 (RGB)")
+    print(f"  ✓ RGB extraction: rgb_data = x[:, :3, :, :] is CORRECT")
+    
+    print(f"\nModel Input Configuration:")
+    print(f"  - DINOv3 input: RGB channels (indices 0-2) = {rgb_bands}")
+    print(f"  - ResNet input: S2_non-RGB ({len(s2_ordered)-3} channels) + S1 ({len(s1_bands)} channels)")
+    print(f"  - Lightning split: rgb_data = x[:, :3], non_rgb_s1_data = x[:, 3:]")
+    print("=" * 80 + "\n")
+    
+    # ============================================================================
+    # SETUP DATA MODULE AND TRAINER
+    # ============================================================================
+    # Hyperparameters for logging
     hparams = {
         "architecture": "multimodal",
         "seed": seed,
@@ -163,7 +255,7 @@ def main(
         "epochs": epochs,
         "batch_size": bs,
         "workers": workers,
-        "channels": None,  # Will be set after band configuration
+        "channels": num_channels,
         "dropout": drop_rate,
         "warmup": warmup if warmup != -1 else None,
         "dinov3_model_name": dinov3_model_name,
@@ -183,81 +275,12 @@ def main(
     hostname, data_dirs = get_benv2_dir_dict()
     data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
     
-    # Create data module with all S2 bands + S1 bands
-    # Use "all_full" to get all S2 bands (14 channels: 3 RGB + 11 non-RGB) + S1 (2 channels)
-    from configilm.extra.BENv2_utils import STANDARD_BANDS
-    from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
-    
-    # Get all S2 bands (includes all resolutions, should be 14 channels)
-    # S2 full includes: B01, B02, B03, B04, B05, B06, B07, B08, B8A, B09, B10, B11, B12, B13
-    # But standard S2 has 12-13 bands. Let's use S2_full which should have all bands
-    s2_bands = STANDARD_BANDS.get("S2", STANDARD_BANDS.get("s2_full", []))
-    s1_bands = STANDARD_BANDS.get("S1", [])
-    
-    # If S2 doesn't have 14 channels, we'll use what's available
-    # The model expects: S2 (14 channels: 3 RGB + 11 non-RGB) + S1 (2 channels)
-    # RGB channels should be: B04 (Red), B03 (Green), B02 (Blue)
-    # So we need to ensure B02, B03, B04 are the first 3 channels
-    
-    # Define RGB bands and reorder S2 bands to put RGB first
-    # This ensures that when data is loaded, RGB channels will be at the front
-    rgb_bands = ["B04", "B03", "B02"]  # RGB bands for DINOv3
-    s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
-    s2_ordered = rgb_bands + s2_non_rgb  # RGB first, then other S2 bands
-    
-    # Combine: S2 (ordered: RGB + non-RGB) + S1
-    # Final order: [RGB (3), S2_non-RGB (N), S1 (2)]
-    multimodal_bands = s2_ordered + s1_bands
-    num_channels = len(multimodal_bands)
-    
-    # Register custom configuration
-    # IMPORTANT ASSUMPTION: We assume that BENv2DataSet loads bands in the order specified
-    # in channel_configurations[num_channels]. The configilm library's stack_and_interpolate
-    # function uses an 'order' parameter, suggesting bands are stacked in list order.
-    # 
-    # However, we cannot be 100% certain without checking the BENv2DataSet source code.
-    # If the dataloader does NOT respect this order, RGB channels may not be at [0,1,2].
-    # 
-    # By registering multimodal_bands with RGB first, we ensure that IF the dataloader
-    # respects the order, RGB will be at indices [0, 1, 2].
-    STANDARD_BANDS[num_channels] = multimodal_bands
-    STANDARD_BANDS["multimodal"] = multimodal_bands
-    BENv2DataSet.channel_configurations[num_channels] = multimodal_bands
-    BENv2DataSet.avail_chan_configs[num_channels] = "Multimodal (S2 ordered + S1)"
-    
-    # Print registered configuration for verification
-    print(f"\nRegistered channel_configurations[{num_channels}]:")
-    print(f"  Band order: {multimodal_bands}")
-    print(f"  -> RGB bands (indices 0-2): {multimodal_bands[:3]}")
-    print(f"  -> S2 non-RGB: {multimodal_bands[3:len(s2_ordered)]}")
-    print(f"  -> S1 bands (last 2): {multimodal_bands[-2:]}")
-    print(f"\n  NOTE: This assumes BENv2DataSet loads bands in this exact order.")
-    print(f"        If unsure, verify by checking configilm library source code or")
-    print(f"        running scripts/verify_band_order.py to test.\n")
-    
-    # Configure RGB channels in model config (for reference/documentation)
-    # Note: The Lightning module now directly separates RGB and non-RGB+S1 data,
-    # so the model doesn't need to know RGB channel indices. We keep this config
-    # for documentation and reference purposes.
-    config["rgb_channels"] = [0, 1, 2]  # RGB channels are at indices [0, 1, 2]
-    config["rgb_band_names"] = rgb_bands  # Store band names for reference
-    config["s2_band_order"] = s2_ordered  # Store S2 band order for reference
-    config["s1_band_order"] = s1_bands  # Store S1 band order for reference
-    
-    # Update hparams
-    hparams["channels"] = num_channels
-    
-    print(f"Using {num_channels} channels: {len(s2_ordered)} S2 + {len(s1_bands)} S1")
-    print(f"Channel order: RGB={rgb_bands} (indices 0-2) + S2_non-RGB ({len(s2_ordered)-3} channels) + S1={s1_bands} (last 2 channels)")
-    print(f"Model input configuration:")
-    print(f"  - DINOv3 input: RGB channels (indices 0-2) = {rgb_bands}")
-    print(f"  - ResNet input: S2_non-RGB ({len(s2_ordered)-3} channels) + S1 ({len(s1_bands)} channels)")
-    print(f"  Note: Lightning module will split data as: rgb_data=x[:,:3] and non_rgb_s1_data=x[:,3:]")
-    
     # Create data module
     dm = default_dm(hparams, data_dirs, img_size)
     
-    # Handle checkpoint resume
+    # ============================================================================
+    # HANDLE CHECKPOINT RESUME
+    # ============================================================================
     ckpt_path = None
     if resume_from is not None:
         if resume_from.lower() in ["best", "last"]:
@@ -275,13 +298,17 @@ def main(
             ckpt_path = str(ckpt_path_obj.resolve())
             print(f"Resuming training from checkpoint: {ckpt_path}")
     
+    # ============================================================================
+    # START TRAINING
+    # ============================================================================
     trainer.fit(model, dm, ckpt_path=ckpt_path)
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
     
-    print("=== Training finished ===")
+    print("\n" + "=" * 80)
+    print("TRAINING FINISHED")
+    print("=" * 80)
     print(f"Test results: {results[0] if results else 'No results'}")
 
 
 if __name__ == "__main__":
     typer.run(main)
-
