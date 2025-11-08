@@ -1,6 +1,6 @@
 import socket
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
 
 import lightning.pytorch as pl
 import torch
@@ -59,9 +59,40 @@ BENv2_DIR_DICTS = {
 }
 
 
-def get_benv2_dir_dict() -> tuple[str, dict]:
+def get_benv2_dir_dict(config_path: Optional[str] = None) -> tuple[str, dict]:
+    """
+    Get the BENv2 data directories based on hostname or config file.
+    
+    Args:
+        config_path: Optional path to config.yaml file. If provided, will read data_dir from there.
+    
+    Returns:
+        Tuple of (hostname/source, data_dirs_dict)
+    """
     hostname = socket.gethostname()
-    print(f"Using data directories for {hostname}")
+    
+    # If config_path is provided, try to read from config first
+    if config_path is not None:
+        try:
+            import yaml
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            if config and 'data' in config and 'benv2_data_dir' in config['data']:
+                benv2_dir = Path(config['data']['benv2_data_dir'])
+                data_dirs = {
+                    "images_lmdb": benv2_dir / "BENv2.lmdb",
+                    "metadata_parquet": benv2_dir / "metadata.parquet",
+                    "metadata_snow_cloud_parquet": benv2_dir / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
+                }
+                print(f"Using data directories from config file: {config_path}")
+                return "config", data_dirs
+        except Exception as e:
+            print(f"Warning: Could not read config from {config_path}: {e}")
+            print("Falling back to hostname-based configuration")
+    
+    # Fallback to hostname-based configuration
+    print(f"Using data directories for hostname: {hostname}")
     return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
