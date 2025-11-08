@@ -18,6 +18,7 @@ env:
   # 训练脚本所需的环境变量（可选）
   OMP_NUM_THREADS: 8
   TOKENIZERS_PARALLELISM: "false"
+  # HF_TOKEN: "your_huggingface_token_here"  # Required for DINOv3 models (gated models on HuggingFace)
 
 data:
   # BigEarthNet v2.0 数据集路径配置

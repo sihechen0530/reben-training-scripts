@@ -1,6 +1,7 @@
 """
 DINOv3 backbone implementation compatible with BigEarthNet v2.0 training scripts.
 """
+import os
 import torch
 import torch.nn as nn
 from typing import Optional
@@ -61,12 +62,17 @@ class DINOv3Backbone(nn.Module):
         self.num_input_channels = num_input_channels
         self.image_size = image_size
         
+        # Get HuggingFace token from environment if available
+        hf_token = os.environ.get("HF_TOKEN", None)
+        if hf_token and hf_token == "YOUR_HF_TOKEN_HERE":
+            hf_token = None  # Ignore placeholder value
+        
         # Load DINOv3 model using AutoModel
         print(f"Loading DINOv3 model: {model_name}")
         if pretrained:
-            self.backbone = AutoModel.from_pretrained(model_name)
+            self.backbone = AutoModel.from_pretrained(model_name, token=hf_token)
         else:
-            config = AutoConfig.from_pretrained(model_name)
+            config = AutoConfig.from_pretrained(model_name, token=hf_token)
             self.backbone = AutoModel.from_config(config)
         
         # Get embedding dimension
