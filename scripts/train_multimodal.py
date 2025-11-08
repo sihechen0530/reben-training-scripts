@@ -208,6 +208,8 @@ def main(
     num_channels = len(multimodal_bands)
     
     # Register custom configuration
+    # Register both integer key (for BENv2DataModule) and string key (for manual lookup)
+    STANDARD_BANDS[num_channels] = multimodal_bands
     STANDARD_BANDS["multimodal"] = multimodal_bands
     BENv2DataSet.channel_configurations[num_channels] = multimodal_bands
     BENv2DataSet.avail_chan_configs[num_channels] = "Multimodal (S2 ordered + S1)"
