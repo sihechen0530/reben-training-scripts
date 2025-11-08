@@ -188,21 +188,20 @@ def verify_data_stacking(include_s1: bool = False):
     print("-" * 80)
     
     # Step 1: Extract RGB from the multi-channel data (as done in Lightning module)
-    # But we need to compare with RAW values, not transformed values
-    # So let's also get the raw multi-channel data
-    rgb_extracted_from_transformed = x[:, :3, :, :]
+    # The dataloader applies normalization, so x is already normalized
+    rgb_extracted = x[:, :3, :, :]
     
-    # Get raw RGB from the original raw sample (before transforms)
+    # Also get raw RGB from the original raw sample (before transforms) for reference
     if len(x_raw.shape) == 3:
         rgb_extracted_raw = x_raw[:3, :, :].unsqueeze(0)
     else:
         rgb_extracted_raw = x_raw[:, :3, :, :]
     
     print(f"\n1. Extracted RGB from multi-channel data:")
-    print(f"   From transformed data:")
-    print(f"     Shape: {rgb_extracted_from_transformed.shape}")
-    print(f"     Mean: {rgb_extracted_from_transformed.mean().item():.4f}, Std: {rgb_extracted_from_transformed.std().item():.4f}")
-    print(f"   From raw data (before transforms):")
+    print(f"   From normalized data (as used in training):")
+    print(f"     Shape: {rgb_extracted.shape}")
+    print(f"     Mean: {rgb_extracted.mean().item():.4f}, Std: {rgb_extracted.std().item():.4f}")
+    print(f"   From raw data (before normalization, for reference):")
     print(f"     Shape: {rgb_extracted_raw.shape}")
     print(f"     Mean: {rgb_extracted_raw.mean().item():.4f}, Std: {rgb_extracted_raw.std().item():.4f}")
     
@@ -240,18 +239,64 @@ def verify_data_stacking(include_s1: bool = False):
         else:
             x_rgb_raw = raw_sample_rgb
         
-        # Apply the same transforms/normalization that the original dataloader applies
-        # The dataloader applies transforms, so we need to check what transforms are used
-        # For now, let's compare the raw values first to see if they match before transforms
+        # IMPORTANT: We need to apply the SAME normalization that the multi-channel dataloader applies
+        # The dataloader applies normalization via transforms in BENv2DataModule
+        # Get normalization parameters from the data module's transform
+        from torchvision import transforms
         
-        # Add batch dimension if needed
-        if len(x_rgb_raw.shape) == 3:
-            x_rgb = x_rgb_raw.unsqueeze(0)
+        # Get normalization transform from the data module
+        norm_mean = None
+        norm_std = None
+        
+        # Try to get from train_transform
+        if hasattr(dm, 'train_transform') and dm.train_transform is not None:
+            # Find Normalize transform
+            for t in dm.train_transform.transforms if hasattr(dm.train_transform, 'transforms') else [dm.train_transform]:
+                if isinstance(t, transforms.Normalize):
+                    norm_mean = t.mean
+                    norm_std = t.std
+                    break
+        
+        # If not found, try from dataset transform
+        if norm_mean is None and hasattr(dm.train_ds, 'transform') and dm.train_ds.transform is not None:
+            for t in dm.train_ds.transform.transforms if hasattr(dm.train_ds.transform, 'transforms') else [dm.train_ds.transform]:
+                if isinstance(t, transforms.Normalize):
+                    norm_mean = t.mean
+                    norm_std = t.std
+                    break
+        
+        # Apply normalization if found
+        if norm_mean is not None and norm_std is not None:
+            # Normalize only the first 3 channels (RGB) using the same mean/std
+            # Note: For RGB-only data, we use the first 3 values of mean/std
+            if isinstance(norm_mean, (list, tuple)):
+                rgb_mean = norm_mean[:3] if len(norm_mean) >= 3 else norm_mean
+                rgb_std = norm_std[:3] if len(norm_std) >= 3 else norm_std
+            else:
+                # If mean/std are scalars, use the same for all channels
+                rgb_mean = norm_mean
+                rgb_std = norm_std
+            
+            # Apply normalization
+            normalize = transforms.Normalize(mean=rgb_mean, std=rgb_std)
+            if len(x_rgb_raw.shape) == 3:
+                x_rgb = normalize(x_rgb_raw).unsqueeze(0)
+            else:
+                x_rgb = normalize(x_rgb_raw)
+            print(f"   Applied normalization: mean={rgb_mean}, std={rgb_std}")
         else:
-            x_rgb = x_rgb_raw
+            # No normalization found, use raw values
+            if len(x_rgb_raw.shape) == 3:
+                x_rgb = x_rgb_raw.unsqueeze(0)
+            else:
+                x_rgb = x_rgb_raw
+            print(f"   ⚠ No normalization found in dataloader, using raw values")
+            print(f"   ⚠ This may cause comparison to fail if dataloader applies normalization")
         
         print(f"   Loaded sample index: {sample_idx} (same as multi-channel sample)")
-        print(f"   Note: Comparing raw values (before transforms/normalization)")
+        print(f"   Normalized RGB shape: {x_rgb.shape}")
+        print(f"   Normalized RGB mean: {x_rgb.mean().item():.4f}, Std: {x_rgb.std().item():.4f}")
+        print(f"   Raw RGB mean: {x_rgb_raw.mean().item():.4f}, Std: {x_rgb_raw.std().item():.4f} (for reference)")
         
     except Exception as e:
         print(f"   ⚠ Error loading RGB dataset: {e}")
@@ -273,50 +318,69 @@ def verify_data_stacking(include_s1: bool = False):
     print(f"   Shape: {x_rgb.shape}")
     print(f"   Mean: {x_rgb.mean().item():.4f}, Std: {x_rgb.std().item():.4f}")
     
-    # Step 3: Compare the two RGB tensors (compare RAW values, not transformed)
-    print(f"\n3. Comparing extracted RGB vs direct RGB loading (RAW values):")
+    # Step 3: Compare the two RGB tensors (compare NORMALIZED values, as used in training)
+    print(f"\n3. Comparing extracted RGB vs direct RGB loading (NORMALIZED values):")
     print("-" * 80)
     
-    # Compare RAW values (before transforms) - this is the most reliable
-    shape_match = rgb_extracted_raw.shape == x_rgb.shape
-    print(f"   Shape match: {'✓' if shape_match else '✗'} (extracted: {rgb_extracted_raw.shape}, direct: {x_rgb.shape})")
+    # Compare NORMALIZED values (as they would be used in training)
+    # Both should have the same normalization applied
+    shape_match = rgb_extracted.shape == x_rgb.shape
+    print(f"   Shape match: {'✓' if shape_match else '✗'} (extracted: {rgb_extracted.shape}, direct: {x_rgb.shape})")
     
     if shape_match:
-        # Compare RAW values (before transforms)
-        if torch.allclose(rgb_extracted_raw, x_rgb, atol=1e-5):
-            print(f"   ✓✓✓ RAW VALUES MATCH EXACTLY! ✓✓✓")
+        # Compare normalized values
+        if torch.allclose(rgb_extracted, x_rgb, atol=1e-4):
+            print(f"   ✓✓✓ NORMALIZED VALUES MATCH EXACTLY! ✓✓✓")
             print(f"   ✓ RGB extraction is CORRECT")
             print(f"   ✓ Channel order is CORRECT (B04, B03, B02 at indices 0, 1, 2)")
             rgb_extraction_verified = True
         else:
             # Check the difference
-            diff = torch.abs(rgb_extracted_raw - x_rgb)
+            diff = torch.abs(rgb_extracted - x_rgb)
             max_diff = diff.max().item()
             mean_diff = diff.mean().item()
             
-            print(f"   Raw values differ:")
+            print(f"   Normalized values differ:")
             print(f"     Max difference: {max_diff:.6f}")
             print(f"     Mean difference: {mean_diff:.6f}")
             
             # Also check per-channel differences
+            channel_names = ["B04 (Red)", "B03 (Green)", "B02 (Blue)"]
             for ch in range(3):
-                ch_diff = torch.abs(rgb_extracted_raw[:, ch, :, :] - x_rgb[:, ch, :, :])
+                ch_diff = torch.abs(rgb_extracted[:, ch, :, :] - x_rgb[:, ch, :, :])
                 ch_max_diff = ch_diff.max().item()
                 ch_mean_diff = ch_diff.mean().item()
-                print(f"     Channel {ch} (expected {'B04/B03/B02'[ch*4:(ch+1)*4]}): max_diff={ch_max_diff:.6f}, mean_diff={ch_mean_diff:.6f}")
+                print(f"     Channel {ch} (expected {channel_names[ch]}): max_diff={ch_max_diff:.6f}, mean_diff={ch_mean_diff:.6f}")
+            
+            # Also compare raw values to see if the issue is normalization or channel order
+            print(f"\n   Also comparing RAW values (before normalization) for reference:")
+            if rgb_extracted_raw.shape == x_rgb_raw.shape:
+                raw_diff = torch.abs(rgb_extracted_raw - x_rgb_raw)
+                raw_max_diff = raw_diff.max().item()
+                raw_mean_diff = raw_diff.mean().item()
+                print(f"     Raw max difference: {raw_max_diff:.6f}")
+                print(f"     Raw mean difference: {raw_mean_diff:.6f}")
+                
+                if raw_max_diff < 1.0:  # Raw values should be close if channels are correct
+                    print(f"     ✓ Raw values are close - suggests normalization difference, not channel order issue")
+                    print(f"     ⚠ Need to ensure same normalization is applied")
+                else:
+                    print(f"     ✗ Raw values differ significantly - suggests channel order may be wrong")
             
             if max_diff < 0.01:  # Very small difference, likely numerical precision
                 print(f"   ⚠ Very small difference (likely numerical precision)")
                 print(f"   ✓ RGB extraction is LIKELY CORRECT")
                 rgb_extraction_verified = True
-            elif max_diff < 0.1:  # Small difference
-                print(f"   ⚠ Small difference detected")
+            elif max_diff < 0.1:  # Small difference, might be normalization
+                print(f"   ⚠ Small difference (may be due to normalization differences)")
                 print(f"   ⚠ RGB extraction is PROBABLY CORRECT")
                 rgb_extraction_verified = None
             else:
-                print(f"   ✗ Significant difference detected in RAW values")
+                print(f"   ✗ Significant difference detected in normalized values")
                 print(f"   ✗ This suggests RGB extraction may be INCORRECT")
-                print(f"   ✗ Please check if channel_configurations is correctly registered")
+                print(f"   ✗ Please check:")
+                print(f"     1. If channel_configurations is correctly registered")
+                print(f"     2. If the same normalization is applied to both")
                 rgb_extraction_verified = False
     else:
         print(f"   ✗ Shape mismatch - cannot compare values")
