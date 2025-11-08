@@ -44,15 +44,15 @@ model = MultiModalModel()
 # Example input data
 batch_size = 4
 image_size = 120
-s1_data = torch.randn(batch_size, 2, image_size, image_size)  # S1: 2 channels
-s2_data = torch.randn(batch_size, 14, image_size, image_size)  # S2: 14 channels (3 RGB + 11 non-RGB)
+rgb_data = torch.randn(batch_size, 3, image_size, image_size)  # RGB: 3 channels (B04, B03, B02)
+non_rgb_s1_data = torch.randn(batch_size, 13, image_size, image_size)  # S2 non-RGB (11) + S1 (2) = 13 channels
 
 # Forward pass
-logits = model(s1_data, s2_data)
+logits = model(rgb_data, non_rgb_s1_data)
 print(f"Logits shape: {logits.shape}")  # (batch_size, num_classes)
 
 # Get embeddings as well
-logits, embeddings = model(s1_data, s2_data, return_embeddings=True)
+logits, embeddings = model(rgb_data, non_rgb_s1_data, return_embeddings=True)
 print(f"DINOv3 embeddings: {embeddings['dinov3'].shape}")
 print(f"ResNet embeddings: {embeddings['resnet'].shape}")
 print(f"Fused embeddings: {embeddings['fused'].shape}")
@@ -234,12 +234,16 @@ class MultiModalLightningModule(pl.LightningModule):
         self.model = MultiModalModel(config=config)
         self.config = config
     
-    def forward(self, s1_data, s2_data):
-        return self.model(s1_data, s2_data)
+    def forward(self, rgb_data, non_rgb_s1_data):
+        return self.model(rgb_data, non_rgb_s1_data)
     
     def training_step(self, batch, batch_idx):
-        s1_data, s2_data, labels = batch
-        logits = self.model(s1_data, s2_data)
+        x, labels = batch
+        # x is (B, C, H, W) where C = RGB (3) + S2_non-RGB (N) + S1 (2)
+        # Split into RGB and non-RGB+S1
+        rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
+        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + S1 (all remaining channels)
+        logits = self.model(rgb_data, non_rgb_s1_data)
         loss = F.cross_entropy(logits, labels)
         self.log("train_loss", loss)
         return loss
@@ -253,10 +257,15 @@ class MultiModalLightningModule(pl.LightningModule):
 ## Notes
 
 - **Input Format**: 
-  - `s1_data`: Shape `(B, 2, H, W)` - S1 radar data (2 channels: VH, VV)
-  - `s2_data`: Shape `(B, 14, H, W)` - S2 spectral data (14 channels: 3 RGB + 11 non-RGB)
+  - `rgb_data`: Shape `(B, 3, H, W)` - RGB channels (B04, B03, B02) for DINOv3 backbone
+  - `non_rgb_s1_data`: Shape `(B, C, H, W)` - Combined S2 non-RGB channels + S1 channels for ResNet backbone
+    - Typically: S2 non-RGB (11 channels) + S1 (2 channels: VH, VV) = 13 channels total
   
-- **Channel Ordering**: The S2 data should have RGB channels first (channels 0-2), followed by non-RGB channels (channels 3-13).
+- **Data Separation**: The Lightning module automatically separates the input tensor `x` (B, C, H, W) into:
+  - `rgb_data = x[:, :3, :, :]` - First 3 channels (RGB)
+  - `non_rgb_s1_data = x[:, 3:, :, :]` - Remaining channels (S2 non-RGB + S1)
+  
+- **Channel Ordering**: The dataloader should provide data with RGB channels first (channels 0-2), followed by S2 non-RGB channels, then S1 channels (last 2).
 
 - **Freezing Backbones**: When `freeze=True`, backbone parameters are frozen and won't be updated during training. This is useful for linear probing or feature extraction.
 

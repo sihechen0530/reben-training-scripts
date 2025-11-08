@@ -124,33 +124,13 @@ class MultiModalModel(nn.Module):
         self.config = config
         self.image_size = config.get("image_size", 120)
         
-        # RGB channel configuration
-        # RGB channels are explicitly specified as indices in the config.
-        # The training script ensures RGB bands are registered first in channel_configurations,
-        # so they appear at the front of the loaded data tensor.
-        rgb_config = config.get("rgb_channels", None)
-        if rgb_config is None:
-            # Default: assume first 3 channels are RGB
-            self.rgb_channel_indices = [0, 1, 2]
-            print("Warning: RGB channels not specified in config, assuming indices [0, 1, 2]")
-        elif isinstance(rgb_config, list):
-            if all(isinstance(x, int) for x in rgb_config):
-                # List of channel indices (explicit specification)
-                self.rgb_channel_indices = rgb_config
-                print(f"RGB channels specified by indices: {rgb_config}")
-            else:
-                raise ValueError("rgb_channels must be a list of integers (channel indices)")
-        elif isinstance(rgb_config, int):
-            # Number of RGB channels (assumes first N channels)
-            self.rgb_channel_indices = list(range(rgb_config))
-            print(f"RGB channels specified by count: first {rgb_config} channels (indices {self.rgb_channel_indices})")
-        else:
-            raise ValueError("rgb_channels must be a list of integers, an integer, or None")
-        
-        # Store band names for reference (if provided)
+        # Note: RGB channel separation is now done in the Lightning module.
+        # The model receives pre-separated rgb_data and non_rgb_s1_data,
+        # so we don't need to configure RGB channel indices here anymore.
+        # However, we keep the config for reference/documentation.
         self.rgb_band_names = config.get("rgb_band_names", None)
         if self.rgb_band_names:
-            print(f"RGB band names: {self.rgb_band_names}")
+            print(f"RGB band names (for reference): {self.rgb_band_names}")
         
         # Initialize backbones
         if dinov3_backbone is None:
@@ -252,21 +232,17 @@ class MultiModalModel(nn.Module):
     
     def forward(
         self,
-        s1_data: torch.Tensor,
-        s2_data: torch.Tensor,
-        s2_band_order: Optional[List[str]] = None,  # Kept for backward compatibility, not used
+        rgb_data: torch.Tensor,
+        non_rgb_s1_data: torch.Tensor,
         return_embeddings: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         """
         Forward pass through the multimodal model.
         
         Args:
-            s1_data: S1 radar data of shape (B, 2, H, W)
-            s2_data: S2 spectral data of shape (B, C, H, W) where C is the number of S2 channels.
-                    The dataloader ensures RGB channels are at the front (indices [0, 1, 2])
-                    based on channel_configurations registered in the training script.
-            s2_band_order: Deprecated - kept for backward compatibility. The dataloader ensures
-                          correct channel order based on channel_configurations.
+            rgb_data: RGB channels (S2 RGB) of shape (B, 3, H, W)
+            non_rgb_s1_data: Combined S2 non-RGB + S1 data of shape (B, C, H, W)
+                           where C = S2_non_RGB_channels + S1_channels
             return_embeddings: If True, also return individual embeddings
         
         Returns:
@@ -278,24 +254,10 @@ class MultiModalModel(nn.Module):
                     - "resnet": ResNet embeddings
                     - "fused": Fused embeddings
         """
-        # Extract RGB channels using pre-configured indices
-        # The dataloader loads data according to channel_configurations[num_channels],
-        # which we register with RGB bands first, so RGB is always at [0, 1, 2]
-        rgb_indices = self.rgb_channel_indices
-        
-        # Extract S2 RGB channels
-        s2_rgb = s2_data[:, rgb_indices, :, :]  # (B, 3, H, W)
-        
-        # Extract S2 non-RGB channels (all channels except RGB)
-        non_rgb_indices = [i for i in range(s2_data.shape[1]) if i not in rgb_indices]
-        s2_non_rgb = s2_data[:, non_rgb_indices, :, :]  # (B, C-3, H, W)
-        
-        # Concatenate S2 non-RGB with S1
-        s1_s2_combined = torch.cat([s2_non_rgb, s1_data], dim=1)  # (B, C-3+2, H, W)
         
         # Extract features from both backbones
-        dinov3_features = self.dinov3_backbone(s2_rgb)  # (B, dinov3_dim)
-        resnet_features = self.resnet_backbone(s1_s2_combined)  # (B, resnet_dim)
+        dinov3_features = self.dinov3_backbone(rgb_data)  # (B, dinov3_dim)
+        resnet_features = self.resnet_backbone(non_rgb_s1_data)  # (B, resnet_dim)
         
         # Fuse features
         fused_features = self.fusion([dinov3_features, resnet_features])  # (B, fused_dim)

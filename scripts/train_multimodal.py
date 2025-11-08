@@ -211,18 +211,35 @@ def main(
     num_channels = len(multimodal_bands)
     
     # Register custom configuration
-    # The dataloader uses channel_configurations[num_channels] to determine which bands to load
-    # and in what order. By registering multimodal_bands with RGB first, we ensure the
-    # dataloader loads data in this order.
+    # IMPORTANT ASSUMPTION: We assume that BENv2DataSet loads bands in the order specified
+    # in channel_configurations[num_channels]. The configilm library's stack_and_interpolate
+    # function uses an 'order' parameter, suggesting bands are stacked in list order.
+    # 
+    # However, we cannot be 100% certain without checking the BENv2DataSet source code.
+    # If the dataloader does NOT respect this order, RGB channels may not be at [0,1,2].
+    # 
+    # By registering multimodal_bands with RGB first, we ensure that IF the dataloader
+    # respects the order, RGB will be at indices [0, 1, 2].
     STANDARD_BANDS[num_channels] = multimodal_bands
     STANDARD_BANDS["multimodal"] = multimodal_bands
     BENv2DataSet.channel_configurations[num_channels] = multimodal_bands
     BENv2DataSet.avail_chan_configs[num_channels] = "Multimodal (S2 ordered + S1)"
     
-    # Configure RGB channels in model config
-    # RGB channels are at indices [0, 1, 2] because we put them first in multimodal_bands
-    # Model needs: DINOv3 -> RGB (3 channels), ResNet -> S2_non-RGB + S1 (N+2 channels)
-    config["rgb_channels"] = [0, 1, 2]  # Explicitly specify RGB channel indices
+    # Print registered configuration for verification
+    print(f"\nRegistered channel_configurations[{num_channels}]:")
+    print(f"  Band order: {multimodal_bands}")
+    print(f"  -> RGB bands (indices 0-2): {multimodal_bands[:3]}")
+    print(f"  -> S2 non-RGB: {multimodal_bands[3:len(s2_ordered)]}")
+    print(f"  -> S1 bands (last 2): {multimodal_bands[-2:]}")
+    print(f"\n  NOTE: This assumes BENv2DataSet loads bands in this exact order.")
+    print(f"        If unsure, verify by checking configilm library source code or")
+    print(f"        running scripts/verify_band_order.py to test.\n")
+    
+    # Configure RGB channels in model config (for reference/documentation)
+    # Note: The Lightning module now directly separates RGB and non-RGB+S1 data,
+    # so the model doesn't need to know RGB channel indices. We keep this config
+    # for documentation and reference purposes.
+    config["rgb_channels"] = [0, 1, 2]  # RGB channels are at indices [0, 1, 2]
     config["rgb_band_names"] = rgb_bands  # Store band names for reference
     config["s2_band_order"] = s2_ordered  # Store S2 band order for reference
     config["s1_band_order"] = s1_bands  # Store S1 band order for reference
@@ -232,9 +249,10 @@ def main(
     
     print(f"Using {num_channels} channels: {len(s2_ordered)} S2 + {len(s1_bands)} S1")
     print(f"Channel order: RGB={rgb_bands} (indices 0-2) + S2_non-RGB ({len(s2_ordered)-3} channels) + S1={s1_bands} (last 2 channels)")
-    print(f"Model configuration:")
-    print(f"  - DINOv3 input: RGB channels at indices {config['rgb_channels']} ({rgb_bands})")
+    print(f"Model input configuration:")
+    print(f"  - DINOv3 input: RGB channels (indices 0-2) = {rgb_bands}")
     print(f"  - ResNet input: S2_non-RGB ({len(s2_ordered)-3} channels) + S1 ({len(s1_bands)} channels)")
+    print(f"  Note: Lightning module will split data as: rgb_data=x[:,:3] and non_rgb_s1_data=x[:,3:]")
     
     # Create data module
     dm = default_dm(hparams, data_dirs, img_size)
