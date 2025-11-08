@@ -20,7 +20,7 @@ class ResNetBackbone(nn.Module):
     
     def __init__(
         self,
-        input_channels: int = 13,
+        input_channels: int = 11,
         pretrained: bool = True,
         freeze: bool = False,
         image_size: int = 120,

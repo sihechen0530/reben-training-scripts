@@ -24,7 +24,7 @@ def example_basic_usage():
     batch_size = 4
     image_size = 120
     s1_data = torch.randn(batch_size, 2, image_size, image_size)  # S1: 2 channels
-    s2_data = torch.randn(batch_size, 14, image_size, image_size)  # S2: 14 channels
+    s2_data = torch.randn(batch_size, 12, image_size, image_size)  # S2: 12 channels
     
     # Forward pass
     logits = model(s1_data, s2_data)

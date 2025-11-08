@@ -55,6 +55,9 @@ class MultiModalLightningModule(pl.LightningModule):
         self.warmup = None if warmup is None or warmup < 0 else warmup
         self.config = config
         
+        # Note: s2_band_order is not needed since the dataloader ensures correct channel order
+        # based on channel_configurations registered in the training script
+        
         # Infer DINOv3 model size from checkpoint if provided
         if dinov3_checkpoint is not None and dinov3_model_name is None:
             inferred_model_name = self._infer_dinov3_model_from_checkpoint(dinov3_checkpoint)
@@ -234,7 +237,13 @@ class MultiModalLightningModule(pl.LightningModule):
         
         # Print first few keys for debugging
         print(f"  Checkpoint contains {len(state_dict)} keys")
-        print(f"  Sample keys: {list(state_dict.keys())[:5]}")
+        print(f"  Sample keys: {list(state_dict.keys())[:10]}")
+        
+        # Check for classification layers that will be skipped (for ResNet)
+        if backbone_name == "resnet":
+            classifier_keys = [k for k in state_dict.keys() if any(kw in k.lower() for kw in ["fc", "classifier", "head"])]
+            if classifier_keys:
+                print(f"  Will skip {len(classifier_keys)} classification layer keys: {classifier_keys[:5]}")
         
         # Map state dict keys to our model structure
         # The checkpoint from BigEarthNetv2_0_ImageClassifier has keys like:
@@ -268,29 +277,48 @@ class MultiModalLightningModule(pl.LightningModule):
         elif backbone_name == "resnet":
             # Look for ResNet backbone keys
             # ResNet models in ConfigILM have structure: model.model.*
+            # We need to skip the final classification layer (fc, classifier, head)
             patterns_to_try = [
                 ("model.model.", "backbone."),  # ConfigILM ResNet structure
                 ("model.", "backbone."),  # Direct model structure
             ]
             
+            # Keys to skip (classification layers)
+            skip_keywords = ["classifier", "head", "fc", "fc.", ".fc"]
+            
             # Also try to find any keys with "resnet" or "backbone"
             for key, value in state_dict.items():
-                if ("resnet" in key.lower() or "backbone" in key.lower()) and "classifier" not in key.lower():
+                # Skip classification layers
+                if any(skip_kw in key.lower() for skip_kw in skip_keywords):
+                    continue
+                
+                if ("resnet" in key.lower() or "backbone" in key.lower() or 
+                    "model.model." in key or "model." in key):
                     # Map to our structure
                     if key.startswith("model.model."):
                         # ConfigILM structure: model.model.conv1 -> resnet_backbone.backbone.0.conv1
                         # We need to map model.model.* to resnet_backbone.backbone.*
+                        # But skip fc layer
+                        if ".fc" in key or "fc." in key:
+                            continue
                         new_key = key.replace("model.model.", f"{target_prefix}.backbone.")
                     elif key.startswith("model."):
+                        # Skip fc layer
+                        if ".fc" in key or "fc." in key:
+                            continue
                         new_key = key.replace("model.", f"{target_prefix}.")
                     else:
                         new_key = f"{target_prefix}.{key}"
                     mapped_state_dict[new_key] = value
         
         # Strategy 2: Try pattern-based mapping
+        skip_keywords = ["classifier", "head", "fc", "fc.", ".fc"]
         for old_pattern, new_pattern in patterns_to_try:
             for key, value in state_dict.items():
                 if old_pattern in key:
+                    # Skip classification layers
+                    if any(skip_kw in key.lower() for skip_kw in skip_keywords):
+                        continue
                     new_key = key.replace(old_pattern, f"{target_prefix}.{new_pattern}")
                     if new_key not in mapped_state_dict:  # Avoid duplicates
                         mapped_state_dict[new_key] = value
@@ -300,19 +328,26 @@ class MultiModalLightningModule(pl.LightningModule):
             print(f"  Warning: No direct matches found, trying to extract from full model...")
             # Try to load as a full model checkpoint and extract backbone
             # This is a fallback - we'll try to match any keys that might work
+            skip_keywords = ["classifier", "head", "fc", "fc.", ".fc"]
             for key, value in state_dict.items():
                 # Skip classifier and other non-backbone parts
-                if "classifier" in key.lower() or "head" in key.lower():
+                if any(skip_kw in key.lower() for skip_kw in skip_keywords):
                     continue
                 
                 # Try to map to backbone structure
                 if backbone_name == "dinov3" and ("backbone" in key.lower() or "embeddings" in key.lower() or "encoder" in key.lower()):
                     new_key = key.replace("model.", f"{target_prefix}.")
                     mapped_state_dict[new_key] = value
-                elif backbone_name == "resnet" and ("backbone" in key.lower() or "conv" in key.lower() or "bn" in key.lower() or "layer" in key.lower()):
-                    new_key = key.replace("model.model.", f"{target_prefix}.backbone.")
-                    if new_key not in mapped_state_dict:
-                        mapped_state_dict[new_key] = value
+                elif backbone_name == "resnet":
+                    # ResNet backbone layers: conv, bn, layer, avgpool (but NOT fc)
+                    if ("backbone" in key.lower() or "conv" in key.lower() or 
+                        "bn" in key.lower() or "layer" in key.lower() or 
+                        "avgpool" in key.lower() or "maxpool" in key.lower()):
+                        # Make sure it's not fc layer
+                        if ".fc" not in key and "fc." not in key:
+                            new_key = key.replace("model.model.", f"{target_prefix}.backbone.")
+                            if new_key not in mapped_state_dict:
+                                mapped_state_dict[new_key] = value
         
         if len(mapped_state_dict) > 0:
             # Load the mapped state dict
@@ -351,7 +386,7 @@ class MultiModalLightningModule(pl.LightningModule):
         """Training step."""
         x, y = batch
         # x is (B, C, H, W) where C = S2_channels + S1_channels
-        # S2 channels: first 3 are RGB (B04, B03, B02), rest are non-RGB
+        # S2 channels: RGB channels are specified in config, rest are non-RGB
         # S1 channels: last 2 channels (VV, VH)
         # Split into S1 and S2
         # Assume S2 has variable number of channels, S1 always has 2
@@ -504,5 +539,5 @@ class MultiModalLightningModule(pl.LightningModule):
     
     def forward(self, s1_data: torch.Tensor, s2_data: torch.Tensor) -> torch.Tensor:
         """Forward pass."""
-        return self.model(s1_data, s2_data)
+        return self.model(s1_data, s2_data, s2_band_order=self.s2_band_order)
 

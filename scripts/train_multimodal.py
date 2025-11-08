@@ -105,6 +105,7 @@ def main(
             "drop_rate": drop_rate,
         },
         "image_size": img_size,
+        # RGB channels will be set after band configuration
     }
     
     if fusion_type == "linear_projection" and fusion_output_dim is not None:
@@ -198,27 +199,42 @@ def main(
     # RGB channels should be: B04 (Red), B03 (Green), B02 (Blue)
     # So we need to ensure B02, B03, B04 are the first 3 channels
     
-    # Reorder S2 bands to put RGB first: B04, B03, B02, then others
-    rgb_bands = ["B04", "B03", "B02"]
+    # Define RGB bands and reorder S2 bands to put RGB first
+    # This ensures that when data is loaded, RGB channels will be at the front
+    rgb_bands = ["B04", "B03", "B02"]  # RGB bands for DINOv3
     s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
-    s2_ordered = rgb_bands + s2_non_rgb
+    s2_ordered = rgb_bands + s2_non_rgb  # RGB first, then other S2 bands
     
-    # Combine: S2 (ordered) + S1
+    # Combine: S2 (ordered: RGB + non-RGB) + S1
+    # Final order: [RGB (3), S2_non-RGB (N), S1 (2)]
     multimodal_bands = s2_ordered + s1_bands
     num_channels = len(multimodal_bands)
     
     # Register custom configuration
-    # Register both integer key (for BENv2DataModule) and string key (for manual lookup)
+    # The dataloader uses channel_configurations[num_channels] to determine which bands to load
+    # and in what order. By registering multimodal_bands with RGB first, we ensure the
+    # dataloader loads data in this order.
     STANDARD_BANDS[num_channels] = multimodal_bands
     STANDARD_BANDS["multimodal"] = multimodal_bands
     BENv2DataSet.channel_configurations[num_channels] = multimodal_bands
     BENv2DataSet.avail_chan_configs[num_channels] = "Multimodal (S2 ordered + S1)"
     
+    # Configure RGB channels in model config
+    # RGB channels are at indices [0, 1, 2] because we put them first in multimodal_bands
+    # Model needs: DINOv3 -> RGB (3 channels), ResNet -> S2_non-RGB + S1 (N+2 channels)
+    config["rgb_channels"] = [0, 1, 2]  # Explicitly specify RGB channel indices
+    config["rgb_band_names"] = rgb_bands  # Store band names for reference
+    config["s2_band_order"] = s2_ordered  # Store S2 band order for reference
+    config["s1_band_order"] = s1_bands  # Store S1 band order for reference
+    
     # Update hparams
     hparams["channels"] = num_channels
     
     print(f"Using {num_channels} channels: {len(s2_ordered)} S2 + {len(s1_bands)} S1")
-    print(f"S2 channels (first 3 are RGB): {s2_ordered[:3]} + {len(s2_ordered)-3} non-RGB")
+    print(f"Channel order: RGB={rgb_bands} (indices 0-2) + S2_non-RGB ({len(s2_ordered)-3} channels) + S1={s1_bands} (last 2 channels)")
+    print(f"Model configuration:")
+    print(f"  - DINOv3 input: RGB channels at indices {config['rgb_channels']} ({rgb_bands})")
+    print(f"  - ResNet input: S2_non-RGB ({len(s2_ordered)-3} channels) + S1 ({len(s1_bands)} channels)")
     
     # Create data module
     dm = default_dm(hparams, data_dirs, img_size)
