@@ -10,3 +10,7 @@ if command -v conda >/dev/null 2>&1; then
 fi
 
 export TOKENIZERS_PARALLELISM=false
+
+# ===== Hugging Face Token (required for DINOv3) =====
+# Replace YOUR_HF_TOKEN_HERE with your actual token
+export HF_TOKEN="YOUR_HF_TOKEN_HERE"
