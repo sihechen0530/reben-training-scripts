@@ -51,20 +51,20 @@ def main(
         drop_rate: float = typer.Option(0.15, help="Dropout rate"),
         warmup: int = typer.Option(1000, help="Warmup steps, set to -1 for automatic calculation"),
         workers: int = typer.Option(8, help="Number of workers"),
-        use_wandb: bool = typer.Option(False, help="Use wandb for logging"),
-        test_run: bool = typer.Option(True, help="Run training with fewer epochs and batches"),
+        use_wandb: bool = typer.Option(False, "--use-wandb/--no-wandb", help="Use wandb for logging"),
+        test_run: bool = typer.Option(True, "--test-run/--no-test-run", help="Run training with fewer epochs and batches"),
         # DINOv3 configuration
         dinov3_model_name: str = typer.Option("facebook/dinov3-vitb16-pretrain-lvd1689m", 
                                               help="DINOv3 HuggingFace model name"),
-        dinov3_pretrained: bool = typer.Option(True, help="Use pretrained DINOv3 weights"),
-        dinov3_freeze: bool = typer.Option(False, help="Freeze DINOv3 backbone"),
+        dinov3_pretrained: bool = typer.Option(True, "--dinov3-pretrained/--no-dinov3-pretrained", help="Use pretrained DINOv3 weights"),
+        dinov3_freeze: bool = typer.Option(False, "--dinov3-freeze/--no-dinov3-freeze", help="Freeze DINOv3 backbone"),
         dinov3_lr: float = typer.Option(1e-4, help="Learning rate for DINOv3 backbone"),
         dinov3_checkpoint: str = typer.Option(None, 
                                              help="Path to checkpoint file to load DINOv3 backbone weights from. "
                                                   "Can be absolute path or relative to scripts/checkpoints/"),
         # ResNet101 configuration
-        resnet_pretrained: bool = typer.Option(True, help="Use pretrained ResNet101 weights"),
-        resnet_freeze: bool = typer.Option(False, help="Freeze ResNet101 backbone"),
+        resnet_pretrained: bool = typer.Option(True, "--resnet-pretrained/--no-resnet-pretrained", help="Use pretrained ResNet101 weights"),
+        resnet_freeze: bool = typer.Option(False, "--resnet-freeze/--no-resnet-freeze", help="Freeze ResNet101 backbone"),
         resnet_lr: float = typer.Option(1e-4, help="Learning rate for ResNet101 backbone"),
         resnet_checkpoint: str = typer.Option(None,
                                              help="Path to checkpoint file to load ResNet101 backbone weights from. "
@@ -76,7 +76,7 @@ def main(
         classifier_type: str = typer.Option("linear", help="Classifier type: linear or mlp"),
         classifier_hidden_dim: int = typer.Option(512, help="Hidden dimension for MLP classifier"),
         # Data configuration
-        use_s1: bool = typer.Option(False, help="Whether to include S1 (Sentinel-1) data. If False, only S2 non-RGB bands are used for ResNet."),
+        use_s1: bool = typer.Option(False, "--use-s1/--no-use-s1", help="Whether to include S1 (Sentinel-1) data. If False, only S2 non-RGB bands are used for ResNet."),
         # Training configuration
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
