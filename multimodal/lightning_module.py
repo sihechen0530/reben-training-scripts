@@ -385,11 +385,11 @@ class MultiModalLightningModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         """Training step."""
         x, y = batch
-        # x is (B, C, H, W) where C = RGB (3) + S2_non-RGB (N) + S1 (2)
-        # Based on channel_configurations, the order is: [RGB, S2_non-RGB, S1]
-        # Split directly into RGB and (non-RGB + S1) as the model expects
+        # x is (B, C, H, W) where C = RGB (3) + S2_non-RGB (9) + optionally S1 (2)
+        # Based on channel_configurations, the order is: [RGB, S2_non-RGB, (optionally S1)]
+        # Split directly into RGB and (non-RGB + optionally S1) as the model expects
         rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
-        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + S1 (all remaining channels)
+        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + optionally S1 (all remaining channels: 9 or 11)
         
         logits = self.model(rgb_data, non_rgb_s1_data)
         loss = self.loss(logits, y)
@@ -406,7 +406,7 @@ class MultiModalLightningModule(pl.LightningModule):
         """Validation step."""
         x, y = batch
         rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
-        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + S1 (all remaining channels)
+        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + optionally S1 (all remaining channels: 9 or 11)
         
         logits = self.model(rgb_data, non_rgb_s1_data)
         loss = self.loss(logits, y)
@@ -451,7 +451,7 @@ class MultiModalLightningModule(pl.LightningModule):
         """Test step."""
         x, y = batch
         rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
-        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + S1 (all remaining channels)
+        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + optionally S1 (all remaining channels: 9 or 11)
         
         logits = self.model(rgb_data, non_rgb_s1_data)
         loss = F.binary_cross_entropy_with_logits(logits, y)

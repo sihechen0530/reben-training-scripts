@@ -75,6 +75,8 @@ def main(
         # Classifier configuration
         classifier_type: str = typer.Option("linear", help="Classifier type: linear or mlp"),
         classifier_hidden_dim: int = typer.Option(512, help="Hidden dimension for MLP classifier"),
+        # Data configuration
+        use_s1: bool = typer.Option(False, help="Whether to include S1 (Sentinel-1) data. If False, only S2 non-RGB bands are used for ResNet."),
         # Training configuration
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
@@ -84,15 +86,21 @@ def main(
     
     The model uses:
     - DINOv3 backbone for S2 RGB data (3 channels: B04, B03, B02)
-    - ResNet101 backbone for S2 non-RGB (11 channels) + S1 (2 channels: VV, VH)
+    - ResNet101 backbone for S2 non-RGB (9 channels) + optionally S1 (2 channels: VV, VH)
     - Late fusion to combine features
     - Classification head for final predictions
     
     Data Flow:
     ----------
-    1. Dataloader loads data with bands in order: [RGB (3), S2_non-RGB (N), S1 (2)]
+    If use_s1=True:
+    1. Dataloader loads data with bands in order: [RGB (3), S2_non-RGB (9), S1 (2)]
     2. Lightning module splits: rgb_data = x[:, :3] and non_rgb_s1_data = x[:, 3:]
     3. Model processes: DINOv3(rgb_data) + ResNet(non_rgb_s1_data) -> fusion -> classifier
+    
+    If use_s1=False:
+    1. Dataloader loads data with bands in order: [RGB (3), S2_non-RGB (9)]
+    2. Lightning module splits: rgb_data = x[:, :3] and non_rgb_data = x[:, 3:]
+    3. Model processes: DINOv3(rgb_data) + ResNet(non_rgb_data) -> fusion -> classifier
     """
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -142,6 +150,34 @@ def main(
         config["classifier"]["hidden_dim"] = classifier_hidden_dim
     
     # ============================================================================
+    # CONFIGURE BAND ORDER AND CALCULATE RESNET INPUT CHANNELS
+    # (Must be done before model creation to set correct input_channels)
+    # ============================================================================
+    # Get S2 and S1 bands from STANDARD_BANDS
+    s2_bands = STANDARD_BANDS.get("S2", STANDARD_BANDS.get("s2_full", []))
+    s1_bands = STANDARD_BANDS.get("S1", ["VV", "VH"])  # Default S1 bands: VV, VH
+    
+    # Define RGB bands (must be first 3 channels for DINOv3)
+    # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
+    rgb_bands = ["B04", "B03", "B02"]
+    
+    # Reorder S2 bands: RGB first, then non-RGB
+    s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
+    s2_ordered = rgb_bands + s2_non_rgb
+    
+    # Calculate ResNet input channels: S2 non-RGB + optionally S1
+    resnet_input_channels = len(s2_non_rgb) + (len(s1_bands) if use_s1 else 0)
+    
+    # Configure ResNet input channels in config (needed before model creation)
+    config["backbones"]["resnet101"]["input_channels"] = resnet_input_channels
+    
+    # Store band order in config for reference
+    config["rgb_band_names"] = rgb_bands
+    config["s2_band_order"] = s2_ordered
+    config["s1_band_order"] = s1_bands if use_s1 else []
+    config["use_s1"] = use_s1
+    
+    # ============================================================================
     # RESOLVE CHECKPOINT PATHS
     # ============================================================================
     dinov3_ckpt_path = None
@@ -185,23 +221,18 @@ def main(
     )
     
     # ============================================================================
-    # CONFIGURE BAND ORDER AND REGISTER WITH DATALOADER
+    # REGISTER BAND CONFIGURATION WITH DATALOADER
     # ============================================================================
-    # Get S2 and S1 bands from STANDARD_BANDS
-    s2_bands = STANDARD_BANDS.get("S2", STANDARD_BANDS.get("s2_full", []))
-    s1_bands = STANDARD_BANDS.get("", [])
+    # Combine: S2 (ordered: RGB + non-RGB) + optionally S1
+    if use_s1:
+        # Final order: [RGB (3), S2_non-RGB (9), S1 (2)]
+        multimodal_bands = s2_ordered + s1_bands
+        config_description = "Multimodal (S2 ordered + S1)"
+    else:
+        # Final order: [RGB (3), S2_non-RGB (9)]
+        multimodal_bands = s2_ordered
+        config_description = "Multimodal (S2 only, no S1)"
     
-    # Define RGB bands (must be first 3 channels for DINOv3)
-    # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
-    rgb_bands = ["B04", "B03", "B02"]
-    
-    # Reorder S2 bands: RGB first, then non-RGB
-    s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
-    s2_ordered = rgb_bands + s2_non_rgb
-    
-    # Combine: S2 (ordered: RGB + non-RGB) + S1
-    # Final order: [RGB (3), S2_non-RGB (N), S1 (2)]
-    multimodal_bands = s2_ordered + s1_bands
     num_channels = len(multimodal_bands)
     
     # Register with BENv2DataSet
@@ -212,12 +243,7 @@ def main(
     STANDARD_BANDS[num_channels] = multimodal_bands
     STANDARD_BANDS["multimodal"] = multimodal_bands
     BENv2DataSet.channel_configurations[num_channels] = multimodal_bands
-    BENv2DataSet.avail_chan_configs[num_channels] = "Multimodal (S2 ordered + S1)"
-    
-    # Store band order in config for reference
-    config["rgb_band_names"] = rgb_bands
-    config["s2_band_order"] = s2_ordered
-    config["s1_band_order"] = s1_bands
+    BENv2DataSet.avail_chan_configs[num_channels] = config_description
     
     # ============================================================================
     # PRINT CONFIGURATION SUMMARY
@@ -225,11 +251,13 @@ def main(
     print("\n" + "=" * 80)
     print("MULTIMODAL TRAINING CONFIGURATION")
     print("=" * 80)
+    print(f"\nS1 Usage: {'ENABLED' if use_s1 else 'DISABLED'}")
     print(f"\nRegistered channel_configurations[{num_channels}]:")
     print(f"  Band order: {multimodal_bands}")
     print(f"  -> RGB bands (indices 0-2): {multimodal_bands[:3]}")
-    print(f"  -> S2 non-RGB ({len(s2_ordered)-3} channels): {multimodal_bands[3:len(s2_ordered)]}")
-    print(f"  -> S1 bands (last 2): {multimodal_bands[-2:]}")
+    print(f"  -> S2 non-RGB ({len(s2_non_rgb)} channels): {multimodal_bands[3:3+len(s2_non_rgb)]}")
+    if use_s1:
+        print(f"  -> S1 bands (last {len(s1_bands)}): {multimodal_bands[-len(s1_bands):]}")
     
     print(f"\nData Loading Confirmation:")
     print(f"  ✓ BENv2DataSet uses channel_configurations[{num_channels}] to load bands")
@@ -240,8 +268,11 @@ def main(
     
     print(f"\nModel Input Configuration:")
     print(f"  - DINOv3 input: RGB channels (indices 0-2) = {rgb_bands}")
-    print(f"  - ResNet input: S2_non-RGB ({len(s2_ordered)-3} channels) + S1 ({len(s1_bands)} channels)")
-    print(f"  - Lightning split: rgb_data = x[:, :3], non_rgb_s1_data = x[:, 3:]")
+    if use_s1:
+        print(f"  - ResNet input: S2_non-RGB ({len(s2_non_rgb)} channels) + S1 ({len(s1_bands)} channels) = {resnet_input_channels} total")
+    else:
+        print(f"  - ResNet input: S2_non-RGB ({len(s2_non_rgb)} channels) only = {resnet_input_channels} total")
+    print(f"  - Lightning split: rgb_data = x[:, :3], non_rgb_data = x[:, 3:]")
     print("=" * 80 + "\n")
     
     # ============================================================================
@@ -265,8 +296,10 @@ def main(
         "resnet_pretrained": resnet_pretrained,
         "resnet_freeze": resnet_freeze,
         "resnet_lr": resnet_lr,
+        "resnet_input_channels": resnet_input_channels,
         "fusion_type": fusion_type,
         "classifier_type": classifier_type,
+        "use_s1": use_s1,
     }
     
     trainer = default_trainer(hparams, use_wandb, test_run)

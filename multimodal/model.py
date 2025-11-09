@@ -32,9 +32,13 @@ class MultiModalModel(nn.Module):
     
     Architecture:
     1. S2 RGB (3 channels) -> DINOv3 backbone
-    2. S2 non-RGB (11 channels) + S1 (2 channels) -> ResNet101 backbone
+    2. S2 non-RGB (9 channels) + optionally S1 (2 channels) -> ResNet101 backbone
     3. Late fusion of embeddings
     4. Classification head
+    
+    The ResNet input channels are configurable:
+    - If use_s1=True: 9 S2 non-RGB + 2 S1 = 11 channels
+    - If use_s1=False: 9 S2 non-RGB only = 9 channels
     """
     
     def __init__(
@@ -59,6 +63,7 @@ class MultiModalModel(nn.Module):
                             "lr": 1e-4,
                         },
                         "resnet101": {
+                            "input_channels": 11,  # 9 S2 non-RGB + 2 S1 (or 9 if use_s1=False)
                             "pretrained": True,
                             "freeze": False,
                             "lr": 1e-4,
@@ -147,8 +152,11 @@ class MultiModalModel(nn.Module):
         
         if resnet_backbone is None:
             resnet_config = config["backbones"]["resnet101"]
+            # Get input_channels from config (defaults to 11 for backward compatibility)
+            # 9 S2 non-RGB + 2 S1 if use_s1=True, or 9 S2 non-RGB only if use_s1=False
+            input_channels = resnet_config.get("input_channels", 11)
             self.resnet_backbone = ResNetBackbone(
-                input_channels=11,  # 9 S2 non-RGB + 2 S1
+                input_channels=input_channels,
                 pretrained=resnet_config.get("pretrained", True),
                 freeze=resnet_config.get("freeze", False),
                 image_size=self.image_size,
@@ -241,8 +249,8 @@ class MultiModalModel(nn.Module):
         
         Args:
             rgb_data: RGB channels (S2 RGB) of shape (B, 3, H, W)
-            non_rgb_s1_data: Combined S2 non-RGB + S1 data of shape (B, C, H, W)
-                           where C = S2_non_RGB_channels + S1_channels
+            non_rgb_s1_data: Combined S2 non-RGB + optionally S1 data of shape (B, C, H, W)
+                           where C = 9 (S2_non_RGB only) or 11 (S2_non_RGB + S1)
             return_embeddings: If True, also return individual embeddings
         
         Returns:
