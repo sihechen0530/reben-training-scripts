@@ -189,7 +189,7 @@ def main(
     # ============================================================================
     # Get S2 and S1 bands from STANDARD_BANDS
     s2_bands = STANDARD_BANDS.get("S2", STANDARD_BANDS.get("s2_full", []))
-    s1_bands = STANDARD_BANDS.get("S1", [])
+    s1_bands = STANDARD_BANDS.get("", [])
     
     # Define RGB bands (must be first 3 channels for DINOv3)
     # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
