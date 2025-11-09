@@ -58,21 +58,19 @@ class MultiModalLightningModule(pl.LightningModule):
         # Note: s2_band_order is not needed since the dataloader ensures correct channel order
         # based on channel_configurations registered in the training script
         
-        # Infer DINOv3 model size from checkpoint if provided
-        if dinov3_checkpoint is not None and dinov3_model_name is None:
-            inferred_model_name = self._infer_dinov3_model_from_checkpoint(dinov3_checkpoint)
-            if inferred_model_name:
-                print(f"Inferred DINOv3 model from checkpoint: {inferred_model_name}")
-                if config is None:
-                    config = {}
-                if "backbones" not in config:
-                    config["backbones"] = {}
-                if "dinov3" not in config["backbones"]:
-                    config["backbones"]["dinov3"] = {}
-                config["backbones"]["dinov3"]["model_name"] = inferred_model_name
-        
-        # Override with explicit model name if provided
-        if dinov3_model_name is not None:
+        # Model name should already be set in config by the training script
+        # The training script automatically infers the model size from checkpoint before creating config
+        # So we don't need to infer again here - just use what's in config
+        if config is not None and "backbones" in config and "dinov3" in config["backbones"]:
+            if "model_name" in config["backbones"]["dinov3"]:
+                print(f"Using DINOv3 model from config: {config['backbones']['dinov3']['model_name']}")
+            else:
+                # Fallback: use explicit model name if not in config
+                if dinov3_model_name is not None:
+                    config["backbones"]["dinov3"]["model_name"] = dinov3_model_name
+                    print(f"Using DINOv3 model name: {dinov3_model_name}")
+        elif dinov3_model_name is not None:
+            # No config or no dinov3 in config, use explicit model name
             if config is None:
                 config = {}
             if "backbones" not in config:
@@ -80,6 +78,7 @@ class MultiModalLightningModule(pl.LightningModule):
             if "dinov3" not in config["backbones"]:
                 config["backbones"]["dinov3"] = {}
             config["backbones"]["dinov3"]["model_name"] = dinov3_model_name
+            print(f"Using DINOv3 model name: {dinov3_model_name}")
         
         # Create model
         self.model = MultiModalModel(config=config)
@@ -350,7 +349,8 @@ class MultiModalLightningModule(pl.LightningModule):
                                 mapped_state_dict[new_key] = value
         
         if len(mapped_state_dict) > 0:
-            # Load the mapped state dict
+            # Load the mapped state dict (no dimension checking - model size should already match)
+            # The model size is automatically inferred from checkpoint in the training script
             print(f"  Attempting to load {len(mapped_state_dict)} parameters...")
             missing_keys, unexpected_keys = self.model.load_state_dict(mapped_state_dict, strict=False)
             
@@ -359,8 +359,15 @@ class MultiModalLightningModule(pl.LightningModule):
                 if len(missing_keys) <= 10:
                     for key in missing_keys:
                         print(f"    - {key}")
+                else:
+                    print(f"  ... and {len(missing_keys) - 10} more missing keys")
             if unexpected_keys:
                 print(f"  Unexpected keys (ignored): {len(unexpected_keys)}")
+                if len(unexpected_keys) <= 10:
+                    for key in unexpected_keys:
+                        print(f"    - {key}")
+                else:
+                    print(f"  ... and {len(unexpected_keys) - 10} more unexpected keys")
             
             loaded_count = len(mapped_state_dict) - len(missing_keys)
             print(f"  Successfully loaded {loaded_count} parameters")

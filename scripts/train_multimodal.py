@@ -34,6 +34,7 @@ if str(project_root) not in sys.path:
 import lightning.pytorch as pl
 import torch
 import typer
+from typing import Optional
 from configilm.extra.BENv2_utils import resolve_data_dir, STANDARD_BANDS
 from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
 
@@ -41,6 +42,102 @@ from multimodal.lightning_module import MultiModalLightningModule
 from scripts.utils import get_benv2_dir_dict, default_trainer, default_dm
 
 __author__ = "BIFOLD/RSiM TU Berlin"
+
+
+def _infer_dinov3_model_from_checkpoint(checkpoint_path: str) -> Optional[str]:
+    """
+    Infer DINOv3 model name from checkpoint path or checkpoint contents.
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        
+    Returns:
+        Inferred DINOv3 model name or None
+    """
+    from pathlib import Path
+    import torch
+    
+    # Strategy 1: Try to infer from filename
+    ckpt_path = Path(checkpoint_path)
+    filename = ckpt_path.name.lower()
+    
+    # Check filename for model size indicators
+    if "dinov3-large" in filename or "dinov3-l" in filename or "dinov3l" in filename:
+        return "facebook/dinov3-vitl16-pretrain-lvd1689m"
+    elif "dinov3-base" in filename or "dinov3-b" in filename or "dinov3b" in filename:
+        return "facebook/dinov3-vitb16-pretrain-lvd1689m"
+    elif "dinov3-small" in filename or "dinov3-s" in filename or "dinov3s" in filename:
+        return "facebook/dinov3-vits16-pretrain-lvd1689m"
+    elif "dinov3-giant" in filename or "dinov3-g" in filename or "dinov3g" in filename:
+        return "facebook/dinov3-vitg16-pretrain-lvd1689m"
+    
+    # Strategy 2: Try to load checkpoint and check hyperparameters
+    try:
+        checkpoint = torch.load(ckpt_path, map_location='cpu')
+        
+        # Check hyperparameters
+        if 'hyper_parameters' in checkpoint:
+            hparams = checkpoint['hyper_parameters']
+            if 'dinov3_model_name' in hparams:
+                return hparams['dinov3_model_name']
+            if 'architecture' in hparams:
+                arch = hparams['architecture'].lower()
+                if 'large' in arch or 'l' in arch:
+                    return "facebook/dinov3-vitl16-pretrain-lvd1689m"
+                elif 'base' in arch or 'b' in arch:
+                    return "facebook/dinov3-vitb16-pretrain-lvd1689m"
+                elif 'small' in arch or 's' in arch:
+                    return "facebook/dinov3-vits16-pretrain-lvd1689m"
+                elif 'giant' in arch or 'g' in arch:
+                    return "facebook/dinov3-vitg16-pretrain-lvd1689m"
+        
+        # Strategy 3: Check state_dict to infer model size from embedding dimension
+        state_dict = checkpoint.get('state_dict', checkpoint)
+        
+        # Look for embedding dimension in various keys
+        hidden_size = None
+        for key in list(state_dict.keys()):
+            value = state_dict[key]
+            if not hasattr(value, 'shape'):
+                continue
+                
+            shape = value.shape
+            if len(shape) < 2:
+                continue
+            
+            # Check for cls_token, mask_token, or patch_embeddings
+            if 'cls_token' in key.lower() or 'mask_token' in key.lower():
+                # Shape should be [1, 1, hidden_size] or [1, hidden_size]
+                if len(shape) >= 2:
+                    hidden_size = shape[-1]
+                    break
+            elif 'patch_embeddings' in key.lower() and 'weight' in key.lower():
+                # Patch embedding weight: [hidden_size, 3, 16, 16]
+                if len(shape) == 4 and shape[1] == 3:
+                    hidden_size = shape[0]
+                    break
+            elif 'embeddings' in key.lower() and 'weight' in key.lower():
+                # General embedding weight
+                if len(shape) == 2:
+                    hidden_size = shape[1]
+                    break
+        
+        # Map hidden size to model name
+        if hidden_size is not None:
+            if hidden_size == 1024:
+                return "facebook/dinov3-vitl16-pretrain-lvd1689m"
+            elif hidden_size == 768:
+                return "facebook/dinov3-vitb16-pretrain-lvd1689m"
+            elif hidden_size == 384:
+                return "facebook/dinov3-vits16-pretrain-lvd1689m"
+            elif hidden_size == 1536:
+                return "facebook/dinov3-vitg16-pretrain-lvd1689m"
+            else:
+                print(f"  Warning: Unknown hidden size {hidden_size} in checkpoint")
+    except Exception as e:
+        print(f"  Warning: Could not infer DINOv3 model from checkpoint: {e}")
+    
+    return None
 
 
 def main(
@@ -116,6 +213,37 @@ def main(
     torch.set_float32_matmul_precision("medium")
     
     # ============================================================================
+    # INFER DINOv3 MODEL NAME FROM CHECKPOINT IF PROVIDED
+    # (Must be done before creating config to ensure correct model size)
+    # ============================================================================
+    # Resolve checkpoint path first
+    dinov3_ckpt_path = None
+    if dinov3_checkpoint is not None:
+        dinov3_ckpt_path_obj = Path(dinov3_checkpoint)
+        if not dinov3_ckpt_path_obj.exists():
+            dinov3_ckpt_path_obj = Path("./checkpoints") / dinov3_checkpoint
+            if not dinov3_ckpt_path_obj.exists():
+                raise FileNotFoundError(
+                    f"DINOv3 checkpoint not found: {dinov3_checkpoint}\n"
+                    f"Tried: {dinov3_checkpoint} and ./checkpoints/{dinov3_checkpoint}"
+                )
+        dinov3_ckpt_path = str(dinov3_ckpt_path_obj.resolve())
+        print(f"Using DINOv3 checkpoint: {dinov3_ckpt_path}")
+        
+        # Automatically infer model name from checkpoint (priority over user specification)
+        # This ensures we use the correct model size to match the checkpoint
+        inferred_model_name = _infer_dinov3_model_from_checkpoint(dinov3_ckpt_path)
+        
+        if inferred_model_name:
+            print(f"Automatically inferred DINOv3 model from checkpoint: {inferred_model_name}")
+            dinov3_model_name = inferred_model_name  # Always use inferred model when checkpoint is provided
+            print(f"Using model: {dinov3_model_name} (automatically matched to checkpoint)")
+        else:
+            print(f"Warning: Could not infer DINOv3 model from checkpoint.")
+            print(f"  Attempting to use specified/default model: {dinov3_model_name}")
+            print(f"  If loading fails due to size mismatch, the checkpoint may be incompatible.")
+    
+    # ============================================================================
     # BUILD MODEL CONFIGURATION
     # ============================================================================
     config = {
@@ -178,21 +306,8 @@ def main(
     config["use_s1"] = use_s1
     
     # ============================================================================
-    # RESOLVE CHECKPOINT PATHS
+    # RESOLVE RESNET CHECKPOINT PATH
     # ============================================================================
-    dinov3_ckpt_path = None
-    if dinov3_checkpoint is not None:
-        dinov3_ckpt_path_obj = Path(dinov3_checkpoint)
-        if not dinov3_ckpt_path_obj.exists():
-            dinov3_ckpt_path_obj = Path("./checkpoints") / dinov3_checkpoint
-            if not dinov3_ckpt_path_obj.exists():
-                raise FileNotFoundError(
-                    f"DINOv3 checkpoint not found: {dinov3_checkpoint}\n"
-                    f"Tried: {dinov3_checkpoint} and ./checkpoints/{dinov3_checkpoint}"
-                )
-        dinov3_ckpt_path = str(dinov3_ckpt_path_obj.resolve())
-        print(f"Using DINOv3 checkpoint: {dinov3_ckpt_path}")
-    
     resnet_ckpt_path = None
     if resnet_checkpoint is not None:
         resnet_ckpt_path_obj = Path(resnet_checkpoint)
