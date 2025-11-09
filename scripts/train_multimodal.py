@@ -151,14 +151,14 @@ def main(
         use_wandb: bool = typer.Option(False, "--use-wandb/--no-wandb", help="Use wandb for logging"),
         test_run: bool = typer.Option(True, "--test-run/--no-test-run", help="Run training with fewer epochs and batches"),
         # DINOv3 configuration
-        dinov3_model_name: str = typer.Option("facebook/dinov3-vitb16-pretrain-lvd1689m", 
-                                              help="DINOv3 HuggingFace model name"),
+        dinov3_hidden_size: int = typer.Option(768, help="DINOv3 hidden size (embedding dimension). Options: 384 (small), 768 (base, default), 1024 (large), 1536 (giant). This determines which DINOv3 model to use, even when loading from checkpoint."),
         dinov3_pretrained: bool = typer.Option(True, "--dinov3-pretrained/--no-dinov3-pretrained", help="Use pretrained DINOv3 weights"),
         dinov3_freeze: bool = typer.Option(False, "--dinov3-freeze/--no-dinov3-freeze", help="Freeze DINOv3 backbone"),
         dinov3_lr: float = typer.Option(1e-4, help="Learning rate for DINOv3 backbone"),
         dinov3_checkpoint: str = typer.Option(None, 
                                              help="Path to checkpoint file to load DINOv3 backbone weights from. "
-                                                  "Can be absolute path or relative to scripts/checkpoints/"),
+                                                  "Can be absolute path or relative to scripts/checkpoints/. "
+                                                  "Model size is determined by --dinov3-hidden-size parameter."),
         # ResNet101 configuration
         resnet_pretrained: bool = typer.Option(True, "--resnet-pretrained/--no-resnet-pretrained", help="Use pretrained ResNet101 weights"),
         resnet_freeze: bool = typer.Option(False, "--resnet-freeze/--no-resnet-freeze", help="Freeze ResNet101 backbone"),
@@ -213,10 +213,28 @@ def main(
     torch.set_float32_matmul_precision("medium")
     
     # ============================================================================
-    # INFER DINOv3 MODEL NAME FROM CHECKPOINT IF PROVIDED
-    # (Must be done before creating config to ensure correct model size)
+    # DETERMINE DINOv3 MODEL NAME FROM HIDDEN SIZE
     # ============================================================================
-    # Resolve checkpoint path first
+    # Map hidden size to model name
+    hidden_size_to_model = {
+        384: "facebook/dinov3-vits16-pretrain-lvd1689m",
+        768: "facebook/dinov3-vitb16-pretrain-lvd1689m",
+        1024: "facebook/dinov3-vitl16-pretrain-lvd1689m",
+        1536: "facebook/dinov3-vitg16-pretrain-lvd1689m",
+    }
+    
+    if dinov3_hidden_size not in hidden_size_to_model:
+        raise ValueError(
+            f"Invalid dinov3_hidden_size: {dinov3_hidden_size}. "
+            f"Must be one of {list(hidden_size_to_model.keys())}"
+        )
+    
+    dinov3_model_name = hidden_size_to_model[dinov3_hidden_size]
+    print(f"Using DINOv3 model: {dinov3_model_name} (hidden_size={dinov3_hidden_size})")
+    
+    # ============================================================================
+    # RESOLVE CHECKPOINT PATHS
+    # ============================================================================
     dinov3_ckpt_path = None
     if dinov3_checkpoint is not None:
         dinov3_ckpt_path_obj = Path(dinov3_checkpoint)
@@ -229,19 +247,7 @@ def main(
                 )
         dinov3_ckpt_path = str(dinov3_ckpt_path_obj.resolve())
         print(f"Using DINOv3 checkpoint: {dinov3_ckpt_path}")
-        
-        # Automatically infer model name from checkpoint (priority over user specification)
-        # This ensures we use the correct model size to match the checkpoint
-        inferred_model_name = _infer_dinov3_model_from_checkpoint(dinov3_ckpt_path)
-        
-        if inferred_model_name:
-            print(f"Automatically inferred DINOv3 model from checkpoint: {inferred_model_name}")
-            dinov3_model_name = inferred_model_name  # Always use inferred model when checkpoint is provided
-            print(f"Using model: {dinov3_model_name} (automatically matched to checkpoint)")
-        else:
-            print(f"Warning: Could not infer DINOv3 model from checkpoint.")
-            print(f"  Attempting to use specified/default model: {dinov3_model_name}")
-            print(f"  If loading fails due to size mismatch, the checkpoint may be incompatible.")
+        print(f"  Note: Model size is determined by --dinov3-hidden-size={dinov3_hidden_size}, not inferred from checkpoint")
     
     # ============================================================================
     # BUILD MODEL CONFIGURATION
