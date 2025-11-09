@@ -24,16 +24,15 @@ data:
   # BigEarthNet v2.0 数据集路径配置
   benv2_data_dir: "/home/liu.guoy/remote_sensing_mock"
 
-train:
   script: "train_BigEarthNetv2_0.py"
   python: "python"   # 或 "python3"
   # 传给 train_BigEarthNetv2_0.py 的参数（会转换为 --k v）
   args:
-    architecture: "resnet18"
-    bandconfig: "s2"       # # all, s2, s1, rgb, all_full, s2_full, s1_full
+    architecture: "dinov3-base"
+    bandconfig: "rgb"      # # all, s2, s1, rgb, all_full, s2_full, s1_full
     bs: 32                 # batch size (注意：参数名是 bs 不是 batch_size)
-    epochs: 10             # 短测试：10 epochs
-    lr: 0.001
+    epochs: 20             # 短测试：20 epochs
+    lr: 0.0001
     seed: 42
     workers: 8
     drop_rate: 0.15
@@ -41,7 +40,7 @@ train:
     warmup: 1000
     use_wandb: false
     upload_to_hub: false
-    # linear_probe: false  # Uncomment for DINOv3 linear probing
+    linear_probe: true   # DINOv3 linear probing with 3-layer MLP head
     # hf_entity: "your-hf-entity"  # Required if upload_to_hub is true
     # resume_from: "best"  # or path to checkpoint
     config: "../train_scripts/config.yaml"  # Path to this config for data directory

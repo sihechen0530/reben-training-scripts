@@ -179,7 +179,8 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
                         param_groups.append({"params": proj_params})
             except Exception:
                 pass
-            optimizer = torch.optim.AdamW(param_groups, lr=self.lr, weight_decay=0.01)
+            # Use lr=1e-4 and weight_decay=0.05 for linear probe mode
+            optimizer = torch.optim.AdamW(param_groups, lr=self.lr, weight_decay=0.05)
         else:
             optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.01)
 

@@ -84,11 +84,15 @@ class DINOv3Backbone(nn.Module):
             print(f"Adapting input layer for {num_input_channels} channels")
             self._adapt_input_layer()
         
-        # Classification head
+        # Classification head - 3-layer MLP
         self.classifier = nn.Sequential(
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(drop_rate),
-            nn.Linear(self.embed_dim, num_classes)
+            nn.Linear(self.embed_dim, 1024),
+            nn.GELU(),
+            nn.Linear(1024, 512),
+            nn.GELU(),
+            nn.Linear(512, num_classes)
         )
         
         # Apply drop path rate if specified (approximate using dropout in attention)
