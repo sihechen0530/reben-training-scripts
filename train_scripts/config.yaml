@@ -22,7 +22,7 @@ env:
 
 data:
   # BigEarthNet v2.0 数据集路径配置
-  benv2_data_dir: "/home/liu.guoy/remote_sensing_mock"
+  benv2_data_dir: "/scratch/chen.sihe1"
 
   script: "train_BigEarthNetv2_0.py"
   python: "python"   # 或 "python3"
