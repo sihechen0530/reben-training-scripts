@@ -25,11 +25,11 @@ __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
 def main(
-        architecture: str = typer.Option("resnet18", help="Model name (timm model name or dinov3-base/dinov3-large/dinov3-small/dinov3-giant)"),
+        architecture: str = typer.Option("resnet101", help="Model name (timm model name or dinov3-base/dinov3-large/dinov3-small/dinov3-giant)"),
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
-        bs: int = typer.Option(32, help="Batch size"),
+        bs: int = typer.Option(512, help="Batch size"),
         drop_rate: float = typer.Option(0.15, help="Dropout rate"),
         drop_path_rate: float = typer.Option(0.15, help="Drop path rate"),
         warmup: int = typer.Option(1000, help="Warmup steps, set to -1 for automatic calculation"),
