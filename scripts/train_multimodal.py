@@ -144,7 +144,7 @@ def main(
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
-        bs: int = typer.Option(32, help="Batch size"),
+        bs: int = typer.Option(512, help="Batch size"),
         drop_rate: float = typer.Option(0.15, help="Dropout rate"),
         warmup: int = typer.Option(1000, help="Warmup steps, set to -1 for automatic calculation"),
         workers: int = typer.Option(8, help="Number of workers"),
