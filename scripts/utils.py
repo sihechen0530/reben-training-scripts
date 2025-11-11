@@ -23,7 +23,7 @@ BENv2DataSet.channel_configurations[11] = STANDARD_BANDS[11]
 BENv2DataSet.avail_chan_configs[11] = "Sentinel-1 + Sentinel-2 (without RGB)"
 
 STANDARD_BANDS[9] = _s2_no_rgb
-STANDARD_BANDS["s2_no_rgb"] = _s1_s2_no_rgb
+STANDARD_BANDS["s2_no_rgb"] = _s2_no_rgb
 BENv2DataSet.channel_configurations[9] = STANDARD_BANDS[9]
 BENv2DataSet.avail_chan_configs[9] = "Sentinel-2 (without RGB)"
 
