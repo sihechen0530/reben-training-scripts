@@ -22,6 +22,11 @@ STANDARD_BANDS["all_no_rgb"] = _s1_s2_no_rgb
 BENv2DataSet.channel_configurations[11] = STANDARD_BANDS[11]
 BENv2DataSet.avail_chan_configs[11] = "Sentinel-1 + Sentinel-2 (without RGB)"
 
+STANDARD_BANDS[9] = _s2_no_rgb
+STANDARD_BANDS["s2_no_rgb"] = _s1_s2_no_rgb
+BENv2DataSet.channel_configurations[9] = STANDARD_BANDS[9]
+BENv2DataSet.avail_chan_configs[9] = "Sentinel-2 (without RGB)"
+
 
 BENv2_DIR_MARS = Path("/data/kaiclasen")
 BENv2_DIR_DICT_MARS = {
@@ -44,7 +49,7 @@ BENv2_DIR_DICT_PLUTO = {
     "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_DEFAULT = Path("/home/liu.guoy/remote_sensing_mock")
+BENv2_DIR_DEFAULT = Path("/scratch/chen.sihe1")
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BENv2.lmdb",
     "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
