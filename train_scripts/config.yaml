@@ -30,7 +30,7 @@ data:
   args:
     architecture: "dinov3-base"
     bandconfig: "rgb"      # # all, s2, s1, rgb, all_full, s2_full, s1_full
-    bs: 32                 # batch size (注意：参数名是 bs 不是 batch_size)
+    bs: 512                 # batch size (注意：参数名是 bs 不是 batch_size)
     epochs: 20             # 短测试：20 epochs
     lr: 0.0001
     seed: 42
