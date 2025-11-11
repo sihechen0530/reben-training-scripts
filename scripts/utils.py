@@ -263,6 +263,8 @@ def get_bands(bandconfig: str):
         bands = ["B04", "B03", "B02"]
     elif bandconfig == "all_no_rgb":
         bands = STANDARD_BANDS["all_no_rgb"]
+    elif bandconfig == "s2_no_rgb":
+        bands = STANDARD_BANDS["s2_no_rgb"]
     else:
         raise ValueError(
             f"Unknown band configuration {bandconfig}, select one of all, s2, s1, rgb or all_full, s2_full, s1_full. The "
