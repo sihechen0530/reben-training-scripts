@@ -1,6 +1,6 @@
 import socket
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
 
 import lightning.pytorch as pl
 import torch
@@ -10,6 +10,23 @@ from huggingface_hub import HfApi
 from lightning.pytorch.loggers import WandbLogger
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 from torchvision import transforms
+from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
+
+
+_s1_bands = ["VV", "VH"]
+_s2_no_rgb = ["B01", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
+_s1_s2_no_rgb = _s1_bands + _s2_no_rgb
+
+STANDARD_BANDS[11] = _s1_s2_no_rgb
+STANDARD_BANDS["all_no_rgb"] = _s1_s2_no_rgb
+BENv2DataSet.channel_configurations[11] = STANDARD_BANDS[11]
+BENv2DataSet.avail_chan_configs[11] = "Sentinel-1 + Sentinel-2 (without RGB)"
+
+STANDARD_BANDS[9] = _s2_no_rgb
+STANDARD_BANDS["s2_no_rgb"] = _s2_no_rgb
+BENv2DataSet.channel_configurations[9] = STANDARD_BANDS[9]
+BENv2DataSet.avail_chan_configs[9] = "Sentinel-2 (without RGB)"
+
 
 BENv2_DIR_MARS = Path("/data/kaiclasen")
 BENv2_DIR_DICT_MARS = {
@@ -32,7 +49,7 @@ BENv2_DIR_DICT_PLUTO = {
     "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_DEFAULT = Path("/projects/SuperResolutionData/sihe.chen/remote_sensing")
+BENv2_DIR_DEFAULT = Path("/scratch/chen.sihe1")
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BENv2.lmdb",
     "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
@@ -47,9 +64,40 @@ BENv2_DIR_DICTS = {
 }
 
 
-def get_benv2_dir_dict() -> tuple[str, dict]:
+def get_benv2_dir_dict(config_path: Optional[str] = None) -> tuple[str, dict]:
+    """
+    Get the BENv2 data directories based on hostname or config file.
+    
+    Args:
+        config_path: Optional path to config.yaml file. If provided, will read data_dir from there.
+    
+    Returns:
+        Tuple of (hostname/source, data_dirs_dict)
+    """
     hostname = socket.gethostname()
-    print(f"Using data directories for {hostname}")
+    
+    # If config_path is provided, try to read from config first
+    if config_path is not None:
+        try:
+            import yaml
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            if config and 'data' in config and 'benv2_data_dir' in config['data']:
+                benv2_dir = Path(config['data']['benv2_data_dir'])
+                data_dirs = {
+                    "images_lmdb": benv2_dir / "BENv2.lmdb",
+                    "metadata_parquet": benv2_dir / "metadata.parquet",
+                    "metadata_snow_cloud_parquet": benv2_dir / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
+                }
+                print(f"Using data directories from config file: {config_path}")
+                return "config", data_dirs
+        except Exception as e:
+            print(f"Warning: Could not read config from {config_path}: {e}")
+            print("Falling back to hostname-based configuration")
+    
+    # Fallback to hostname-based configuration
+    print(f"Using data directories for hostname: {hostname}")
     return hostname, BENv2_DIR_DICTS.get(hostname, BENv2_DIR_DICT_DEFAULT)
 
 
@@ -213,6 +261,10 @@ def get_bands(bandconfig: str):
     elif bandconfig == "rgb":
         # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
         bands = ["B04", "B03", "B02"]
+    elif bandconfig == "all_no_rgb":
+        bands = STANDARD_BANDS["all_no_rgb"]
+    elif bandconfig == "s2_no_rgb":
+        bands = STANDARD_BANDS["s2_no_rgb"]
     else:
         raise ValueError(
             f"Unknown band configuration {bandconfig}, select one of all, s2, s1, rgb or all_full, s2_full, s1_full. The "

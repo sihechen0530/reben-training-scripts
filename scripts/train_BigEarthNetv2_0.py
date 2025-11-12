@@ -25,11 +25,11 @@ __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
 def main(
-        architecture: str = typer.Option("resnet18", help="Model name (timm model name or dinov3-base/dinov3-large/dinov3-small/dinov3-giant)"),
+        architecture: str = typer.Option("resnet101", help="Model name (timm model name or dinov3-base/dinov3-large/dinov3-small/dinov3-giant)"),
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
-        bs: int = typer.Option(32, help="Batch size"),
+        bs: int = typer.Option(512, help="Batch size"),
         drop_rate: float = typer.Option(0.15, help="Dropout rate"),
         drop_path_rate: float = typer.Option(0.15, help="Drop path rate"),
         warmup: int = typer.Option(1000, help="Warmup steps, set to -1 for automatic calculation"),
@@ -47,6 +47,8 @@ def main(
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+    config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
+                          "If not provided, will use hostname-based directory selection."),
         run_name: str = typer.Option(None, help="Optional unique run name/identifier to prevent conflicts when running multiple trainings. "
                                                  "If not provided, will be auto-generated from hyperparameters."),
 ):
@@ -70,7 +72,7 @@ def main(
 
     bands, channels = get_bands(bandconfig)
     # fixed model parameters based on the BigEarthNet v2.0 dataset
-    config = ILMConfiguration(
+    ilm_config = ILMConfiguration(
         network_type=ILMType.IMAGE_CLASSIFICATION,
         classes=num_classes,
         image_size=img_size,
@@ -98,6 +100,9 @@ def main(
         else:
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
 
+    # Use the ILMConfiguration object created above (ilm_config)
+    model = BigEarthNetv2_0_ImageClassifier(ilm_config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
+
     model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
 
     # Generate unique run name if not provided
@@ -124,8 +129,9 @@ def main(
     }
     trainer = default_trainer(hparams, use_wandb, test_run)
 
-    hostname, data_dirs = get_benv2_dir_dict()
-    data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
+    # Get data directories - from config file if provided, otherwise use hostname
+    hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
+    data_dirs = resolve_data_dir(data_dirs, allow_mock=True)  # Allow mock data for testing
     dm = default_dm(hparams, data_dirs, img_size)
 
     # Handle checkpoint resume
@@ -151,6 +157,8 @@ def main(
 
     trainer.fit(model, dm, ckpt_path=ckpt_path)
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
+    model_name = f"{architecture}-{bandconfig}-{version}"
+    model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
     # Use run_name to prevent conflicts when running multiple trainings
     model_name = f"{architecture}-{bandconfig}-{run_name}-{version}"
     model.save_pretrained(f"hf_models/{model_name}", config=config)
