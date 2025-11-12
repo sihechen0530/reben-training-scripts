@@ -32,7 +32,7 @@ BENv2_DIR_DICT_PLUTO = {
     "metadata_snow_cloud_parquet": BENv2_DIR_PLUTO / "metadata_for_patches_with_snow_cloud_or_shadow.parquet",
 }
 
-BENv2_DIR_DEFAULT = Path("/projects/SuperResolutionData/sihe.chen/remote_sensing_mock")
+BENv2_DIR_DEFAULT = Path("/projects/SuperResolutionData/sihe.chen/remote_sensing")
 BENv2_DIR_DICT_DEFAULT = {
     "images_lmdb": BENv2_DIR_DEFAULT / "BENv2.lmdb",
     "metadata_parquet": BENv2_DIR_DEFAULT / "metadata.parquet",
@@ -282,10 +282,12 @@ def default_trainer(
 
     logger.log_hyperparams(hparams)
 
+    # Include run_name in checkpoint filename to prevent conflicts when running multiple trainings
+    run_name = hparams.get('run_name', 'default')
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         monitor="val/MultilabelAveragePrecision_macro",
         dirpath="./checkpoints",
-        filename=f"{hparams['architecture']}-{hparams['seed']}-{hparams['channels']}-val_mAP_macro-" + "{val/MultilabelAveragePrecision_macro:.2f}",
+        filename=f"{hparams['architecture']}-{hparams['seed']}-{hparams['channels']}-{run_name}-val_mAP_macro-" + "{val/MultilabelAveragePrecision_macro:.2f}",
         save_top_k=1,
         mode="max",
         auto_insert_metric_name=False,

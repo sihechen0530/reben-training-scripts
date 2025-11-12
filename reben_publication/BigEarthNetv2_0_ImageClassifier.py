@@ -78,7 +78,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
                 elif 'large' in timm_name.lower() or 'l' in timm_name.lower():
                     dinov3_model_name = "facebook/dinov3-vitl16-pretrain-lvd1689m"
                 elif 'giant' in timm_name.lower() or 'g' in timm_name.lower():
-                    dinov3_model_name = "facebook/dinov3-vitg16-pretrain-lvd1689m"
+                    dinov3_model_name = "facebook/dinov3-vit7b16-pretrain-lvd1689m"
                 else:
                     # Default to small
                     dinov3_model_name = "facebook/dinov3-vits16-pretrain-lvd1689m"

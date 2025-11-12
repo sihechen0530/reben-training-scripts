@@ -40,7 +40,7 @@ class DINOv3Backbone(nn.Module):
                 - 'facebook/dinov3-vits16-pretrain-lvd1689m' (small, 384 dim)
                 - 'facebook/dinov3-vitb16-pretrain-lvd1689m' (base, 768 dim)
                 - 'facebook/dinov3-vitl16-pretrain-lvd1689m' (large, 1024 dim)
-                - 'facebook/dinov3-vitg16-pretrain-lvd1689m' (giant, 1536 dim)
+                - 'facebook/dinov3-vit7b16-pretrain-lvd1689m' (giant, 1536 dim)
             num_classes: Number of output classes
             num_input_channels: Number of input channels (10 for S2, 12 for S2+S1, etc.)
             image_size: Input image size

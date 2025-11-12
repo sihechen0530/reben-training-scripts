@@ -47,6 +47,8 @@ def main(
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+        run_name: str = typer.Option(None, help="Optional unique run name/identifier to prevent conflicts when running multiple trainings. "
+                                                 "If not provided, will be auto-generated from hyperparameters."),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -92,12 +94,18 @@ def main(
         elif 'large' in architecture.lower() or 'l' in architecture.lower():
             dinov3_name = "facebook/dinov3-vitl16-pretrain-lvd1689m"
         elif 'giant' in architecture.lower() or 'g' in architecture.lower():
-            dinov3_name = "facebook/dinov3-vitg16-pretrain-lvd1689m"
+            dinov3_name = "facebook/dinov3-vit7b16-pretrain-lvd1689m"
         else:
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
 
     model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
 
+    # Generate unique run name if not provided
+    if run_name is None:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{architecture}_{bandconfig}_{seed}_{timestamp}"
+    
     hparams = {
         "architecture": architecture,
         "seed": seed,
@@ -112,6 +120,7 @@ def main(
         "warmup": warmup,
         "version": version,
         "linear_probe": linear_probe,
+        "run_name": run_name,
     }
     trainer = default_trainer(hparams, use_wandb, test_run)
 
@@ -142,7 +151,8 @@ def main(
 
     trainer.fit(model, dm, ckpt_path=ckpt_path)
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
-    model_name = f"{architecture}-{bandconfig}-{version}"
+    # Use run_name to prevent conflicts when running multiple trainings
+    model_name = f"{architecture}-{bandconfig}-{run_name}-{version}"
     model.save_pretrained(f"hf_models/{model_name}", config=config)
 
     print("=== Training finished ===")
