@@ -35,7 +35,7 @@ python train_BigEarthNetv2_0.py \
     --bandconfig=all_no_rgb \
     --lr=0.0001 \
     --bs=512 \
-    --resume-from /home/liu.guoy/reben-training-scripts/scripts/checkpoints/resnet101-42-11-val_mAP_macro-0.63.ckpt
+    --resume-from /home/liu.guoy/reben-training-scripts/scripts/checkpoints/resnet101-42-11-val_mAP_macro-0.69.ckpt
 
 # 打印完成信息
 echo ""
