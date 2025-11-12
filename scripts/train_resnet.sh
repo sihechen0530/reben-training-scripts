@@ -5,8 +5,8 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --time=8:00:00
-#SBATCH --output=logs/train_s2_%j.out
-#SBATCH --error=logs/train_s2_%j.err
+#SBATCH --output=logs/train_all_no_rgb_%j.out
+#SBATCH --error=logs/train_all_no_rgb_%j.err
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 
