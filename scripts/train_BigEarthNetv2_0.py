@@ -47,7 +47,7 @@ def main(
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
-    config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
+        config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
                           "If not provided, will use hostname-based directory selection."),
         run_name: str = typer.Option(None, help="Optional unique run name/identifier to prevent conflicts when running multiple trainings. "
                                                  "If not provided, will be auto-generated from hyperparameters."),
@@ -89,13 +89,13 @@ def main(
     if architecture.startswith('dinov3') and dinov3_name is None:
         # Map architecture names to HuggingFace model names
         # DINOv3 uses specific naming: facebook/dinov3-vit{s|b|l|g}16-pretrain-lvd1689m
-        if 'small' in architecture.lower() or 's' in architecture.lower():
+        if 'small' in architecture.lower():
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"
-        elif 'base' in architecture.lower() or 'b' in architecture.lower():
+        elif 'base' in architecture.lower():
             dinov3_name = "facebook/dinov3-vitb16-pretrain-lvd1689m"
-        elif 'large' in architecture.lower() or 'l' in architecture.lower():
+        elif 'large' in architecture.lower():
             dinov3_name = "facebook/dinov3-vitl16-pretrain-lvd1689m"
-        elif 'giant' in architecture.lower() or 'g' in architecture.lower():
+        elif 'giant' in architecture.lower():
             dinov3_name = "facebook/dinov3-vit7b16-pretrain-lvd1689m"
         else:
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
