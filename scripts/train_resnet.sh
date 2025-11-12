@@ -31,10 +31,10 @@ echo ""
 # 运行训练
 python train_BigEarthNetv2_0.py \
     --no-test-run \
-    --bandconfig=s2 \
+    --bandconfig=all_no_rgb \
     --lr=0.0001 \
     --bs=512 \
-    --resume-from /home/liu.guoy/reben-training-scripts/scripts/checkpoints
+    --resume-from /home/liu.guoy/reben-training-scripts/scripts/checkpoints/resnet101-42-11-val_mAP_macro-0.55.ckpt
 
 # 打印完成信息
 echo ""
