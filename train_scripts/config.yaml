@@ -31,7 +31,7 @@ train:
   args:
     architecture: "resnet18"
     bandconfig: "s2"       # # all, s2, s1, rgb, all_full, s2_full, s1_full
-    bs: 32                 # batch size (注意：参数名是 bs 不是 batch_size)
+    bs: 512                 # batch size (注意：参数名是 bs 不是 batch_size)
     epochs: 10             # 短测试：10 epochs
     lr: 0.001
     seed: 42
