@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_s2
+#SBATCH --job-name=train_all_no_rgb
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
