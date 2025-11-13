@@ -3,7 +3,6 @@ This is an example script for supervised image classification using the BigEarth
 """
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Add parent directory to path to allow importing reben_publication
 # This allows running from the scripts directory
@@ -15,7 +14,6 @@ if str(project_root) not in sys.path:
 import lightning.pytorch as pl
 import torch
 import typer
-import yaml
 from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
@@ -49,83 +47,9 @@ def main(
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
-        head_type: str = typer.Option("linear", help="Classification head type to use for DINOv3 backbones. Options: linear, mlp."),
-        head_mlp_dims: str = typer.Option(
-            None,
-            help="Comma-separated hidden dimensions for the MLP head (e.g., '1024,512'). "
-                 "Only used when head_type is 'mlp'.",
-        ),
-        head_dropout: Optional[float] = typer.Option(
-            None,
-            help="Dropout probability for the classification head. Defaults to drop_rate when not set.",
-        ),
-        config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
-                                               "If not provided, will use hostname-based directory selection."),
+    config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
+                          "If not provided, will use hostname-based directory selection."),
 ):
-    # ============================================================================
-    # PRINT CONFIGURATION FROM YAML FILE (if provided)
-    # ============================================================================
-    if config_path:
-        try:
-            config_path_obj = Path(config_path)
-            if config_path_obj.exists():
-                with open(config_path_obj, 'r') as f:
-                    config_data = yaml.safe_load(f)
-                
-                print("\n" + "="*80, file=sys.stderr)
-                print("YAML CONFIGURATION", file=sys.stderr)
-                print("="*80, file=sys.stderr)
-                print(f"Config file: {config_path_obj.absolute()}", file=sys.stderr)
-                print("-"*80, file=sys.stderr)
-                print(yaml.dump(config_data, default_flow_style=False, sort_keys=False), file=sys.stderr)
-                print("="*80 + "\n", file=sys.stderr)
-            else:
-                print(f"\nWarning: Config file not found: {config_path}\n", file=sys.stderr)
-        except Exception as e:
-            print(f"\nWarning: Failed to load config file: {e}\n", file=sys.stderr)
-    
-    # ============================================================================
-    # PRINT TRAINING PARAMETERS
-    # ============================================================================
-    print("\n" + "="*80, file=sys.stderr)
-    print("TRAINING PARAMETERS", file=sys.stderr)
-    print("="*80, file=sys.stderr)
-    training_params = {
-        "architecture": architecture,
-        "bandconfig": bandconfig,
-        "seed": seed,
-        "learning_rate": lr,
-        "epochs": epochs,
-        "batch_size": bs,
-        "drop_rate": drop_rate,
-        "drop_path_rate": drop_path_rate,
-        "warmup_steps": warmup,
-        "workers": workers,
-        "linear_probe": linear_probe,
-        "head_type": head_type,
-        "head_mlp_dims": head_mlp_dims,
-        "head_dropout": head_dropout,
-        "use_wandb": use_wandb,
-        "upload_to_hub": upload_to_hub,
-        "test_run": test_run,
-        "resume_from": resume_from,
-        "dinov3_model_name": dinov3_model_name,
-        "hf_entity": hf_entity,
-    }
-    for key, value in training_params.items():
-        print(f"  {key:20s}: {value}", file=sys.stderr)
-    print("="*80 + "\n", file=sys.stderr)
-    
-    # DEBUG: Print received parameters
-    print(f"\n{'='*80}")
-    print(f"DEBUG: train_BigEarthNetv2_0.py - Received parameters:")
-    print(f"  architecture: {architecture}")
-    print(f"  linear_probe: {linear_probe}")
-    print(f"  head_type: {head_type}")
-    print(f"  head_mlp_dims: {head_mlp_dims}")
-    print(f"  head_dropout: {head_dropout}")
-    print(f"{'='*80}\n")
-    
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
     # FIXED MODEL PARAMETERS
@@ -191,6 +115,14 @@ def main(
         head_dropout=head_dropout_val,
     )
 
+    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
+
+    # Generate unique run name if not provided
+    if run_name is None:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{architecture}_{bandconfig}_{seed}_{timestamp}"
+
     hparams = {
         "architecture": architecture,
         "seed": seed,
@@ -208,8 +140,9 @@ def main(
         "head_type": head_type,
         "head_mlp_dims": mlp_dims,
         "head_dropout": head_dropout_val,
+        "run_name": run_name,
     }
-    trainer = default_trainer(hparams, use_wandb, test_run)
+    trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
     # Get data directories - from config file if provided, otherwise use hostname
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
@@ -241,6 +174,9 @@ def main(
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
     model_name = f"{architecture}-{bandconfig}-{version}"
     model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
+    # Use run_name to prevent conflicts when running multiple trainings
+    model_name = f"{architecture}-{bandconfig}-{run_name}-{version}"
+    model.save_pretrained(f"hf_models/{model_name}", config=config)
 
     print("=== Training finished ===")
     # upload_model_and_readme_to_hub(

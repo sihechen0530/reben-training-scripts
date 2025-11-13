@@ -217,7 +217,7 @@ def main(
             if config_path_obj.exists():
                 with open(config_path_obj, 'r') as f:
                     config_data = yaml.safe_load(f)
-                
+
                 print("\n" + "="*80, file=sys.stderr)
                 print("YAML CONFIGURATION", file=sys.stderr)
                 print("="*80, file=sys.stderr)
@@ -229,7 +229,7 @@ def main(
                 print(f"\nWarning: Config file not found: {config_path}\n", file=sys.stderr)
         except Exception as e:
             print(f"\nWarning: Failed to load config file: {e}\n", file=sys.stderr)
-    
+
     # ============================================================================
     # PRINT TRAINING PARAMETERS
     # ============================================================================
@@ -269,7 +269,7 @@ def main(
     for key, value in training_params.items():
         print(f"  {key:25s}: {value}", file=sys.stderr)
     print("="*80 + "\n", file=sys.stderr)
-    
+
     # ============================================================================
     # FIXED MODEL PARAMETERS
     # ============================================================================
@@ -491,7 +491,7 @@ def main(
         "use_s1": use_s1,
     }
     
-    trainer = default_trainer(hparams, use_wandb, test_run)
+    trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
     
     # Get data directories
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)

@@ -224,7 +224,7 @@ def main(
         elif 'large' in architecture.lower() or 'l' in architecture.lower():
             dinov3_name = "facebook/dinov3-vitl16-pretrain-lvd1689m"
         elif 'giant' in architecture.lower() or 'g' in architecture.lower():
-            dinov3_name = "facebook/dinov3-vitg16-pretrain-lvd1689m"
+            dinov3_name = "facebook/dinov3-vit7b16-pretrain-lvd1689m"
         else:
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
     
