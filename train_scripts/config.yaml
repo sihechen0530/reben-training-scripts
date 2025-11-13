@@ -48,7 +48,7 @@ train:
     head_mlp_dims: "1024,512"
     head_dropout: 0.2
     # hf_entity: "your-hf-entity"  # Required if upload_to_hub is true
-    # resume_from: "best"  # or path to checkpoint
+    # resume_from: "best"  # or path to checkpoint - 注释掉从头开始训练
     config: "../train_scripts/config.yaml"  # Path to this config for data directory
   # 单独给多模态训练脚本的默认参数，只有 use_multimodal: true 时才会被使用
   multimodal_args:
