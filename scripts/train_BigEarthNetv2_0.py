@@ -3,6 +3,7 @@ This is an example script for supervised image classification using the BigEarth
 """
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Add parent directory to path to allow importing reben_publication
 # This allows running from the scripts directory
@@ -47,6 +48,16 @@ def main(
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+        head_type: str = typer.Option("linear", help="Classification head type to use for DINOv3 backbones. Options: linear, mlp."),
+        head_mlp_dims: str = typer.Option(
+            None,
+            help="Comma-separated hidden dimensions for the MLP head (e.g., '1024,512'). "
+                 "Only used when head_type is 'mlp'.",
+        ),
+        head_dropout: Optional[float] = typer.Option(
+            None,
+            help="Dropout probability for the classification head. Defaults to drop_rate when not set.",
+        ),
     config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
                           "If not provided, will use hostname-based directory selection."),
 ):
@@ -99,7 +110,21 @@ def main(
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
 
     # Use the ILMConfiguration object created above (ilm_config)
-    model = BigEarthNetv2_0_ImageClassifier(ilm_config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
+    mlp_dims = None
+    if head_mlp_dims:
+        mlp_dims = [int(dim.strip()) for dim in head_mlp_dims.split(",") if dim.strip()]
+    head_dropout_val = head_dropout if head_dropout is not None else drop_rate
+
+    model = BigEarthNetv2_0_ImageClassifier(
+        ilm_config,
+        lr=lr,
+        warmup=warmup,
+        dinov3_model_name=dinov3_name,
+        linear_probe=linear_probe,
+        head_type=head_type,
+        mlp_hidden_dims=mlp_dims,
+        head_dropout=head_dropout_val,
+    )
 
     hparams = {
         "architecture": architecture,
@@ -115,6 +140,9 @@ def main(
         "warmup": warmup,
         "version": version,
         "linear_probe": linear_probe,
+        "head_type": head_type,
+        "head_mlp_dims": mlp_dims,
+        "head_dropout": head_dropout_val,
     }
     trainer = default_trainer(hparams, use_wandb, test_run)
 
