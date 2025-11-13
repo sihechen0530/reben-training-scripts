@@ -44,6 +44,9 @@ train:
     use_wandb: false
     upload_to_hub: false
     linear_probe: true  # Uncomment for DINOv3 linear probing
+    head_type: "mlp"
+    head_mlp_dims: "1024,512"
+    head_dropout: 0.2
     # hf_entity: "your-hf-entity"  # Required if upload_to_hub is true
     # resume_from: "best"  # or path to checkpoint
     config: "../train_scripts/config.yaml"  # Path to this config for data directory
