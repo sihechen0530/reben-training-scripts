@@ -45,6 +45,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             head_type: str = "linear",
             mlp_hidden_dims: Optional[List[int]] = None,
             head_dropout: Optional[float] = None,
+            **kwargs,  # Accept extra kwargs for backward compatibility
     ):
         super().__init__()
         self.lr = lr
