@@ -1,0 +1,4 @@
+checkpoints/
+hf_models/
+lightning_logs/
+hf_data/
