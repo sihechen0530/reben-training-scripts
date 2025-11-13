@@ -15,6 +15,7 @@ if str(project_root) not in sys.path:
 import lightning.pytorch as pl
 import torch
 import typer
+import yaml
 from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
@@ -61,6 +62,60 @@ def main(
         config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
                                                "If not provided, will use hostname-based directory selection."),
 ):
+    # ============================================================================
+    # PRINT CONFIGURATION FROM YAML FILE (if provided)
+    # ============================================================================
+    if config_path:
+        try:
+            config_path_obj = Path(config_path)
+            if config_path_obj.exists():
+                with open(config_path_obj, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                
+                print("\n" + "="*80, file=sys.stderr)
+                print("YAML CONFIGURATION", file=sys.stderr)
+                print("="*80, file=sys.stderr)
+                print(f"Config file: {config_path_obj.absolute()}", file=sys.stderr)
+                print("-"*80, file=sys.stderr)
+                print(yaml.dump(config_data, default_flow_style=False, sort_keys=False), file=sys.stderr)
+                print("="*80 + "\n", file=sys.stderr)
+            else:
+                print(f"\nWarning: Config file not found: {config_path}\n", file=sys.stderr)
+        except Exception as e:
+            print(f"\nWarning: Failed to load config file: {e}\n", file=sys.stderr)
+    
+    # ============================================================================
+    # PRINT TRAINING PARAMETERS
+    # ============================================================================
+    print("\n" + "="*80, file=sys.stderr)
+    print("TRAINING PARAMETERS", file=sys.stderr)
+    print("="*80, file=sys.stderr)
+    training_params = {
+        "architecture": architecture,
+        "bandconfig": bandconfig,
+        "seed": seed,
+        "learning_rate": lr,
+        "epochs": epochs,
+        "batch_size": bs,
+        "drop_rate": drop_rate,
+        "drop_path_rate": drop_path_rate,
+        "warmup_steps": warmup,
+        "workers": workers,
+        "linear_probe": linear_probe,
+        "head_type": head_type,
+        "head_mlp_dims": head_mlp_dims,
+        "head_dropout": head_dropout,
+        "use_wandb": use_wandb,
+        "upload_to_hub": upload_to_hub,
+        "test_run": test_run,
+        "resume_from": resume_from,
+        "dinov3_model_name": dinov3_model_name,
+        "hf_entity": hf_entity,
+    }
+    for key, value in training_params.items():
+        print(f"  {key:20s}: {value}", file=sys.stderr)
+    print("="*80 + "\n", file=sys.stderr)
+    
     # DEBUG: Print received parameters
     print(f"\n{'='*80}")
     print(f"DEBUG: train_BigEarthNetv2_0.py - Received parameters:")

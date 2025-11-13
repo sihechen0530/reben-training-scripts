@@ -34,6 +34,7 @@ if str(project_root) not in sys.path:
 import lightning.pytorch as pl
 import torch
 import typer
+import yaml
 from typing import Optional
 from configilm.extra.BENv2_utils import resolve_data_dir, STANDARD_BANDS
 from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
@@ -206,6 +207,68 @@ def main(
     """
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
+    
+    # ============================================================================
+    # PRINT CONFIGURATION FROM YAML FILE (if provided)
+    # ============================================================================
+    if config_path:
+        try:
+            config_path_obj = Path(config_path)
+            if config_path_obj.exists():
+                with open(config_path_obj, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                
+                print("\n" + "="*80, file=sys.stderr)
+                print("YAML CONFIGURATION", file=sys.stderr)
+                print("="*80, file=sys.stderr)
+                print(f"Config file: {config_path_obj.absolute()}", file=sys.stderr)
+                print("-"*80, file=sys.stderr)
+                print(yaml.dump(config_data, default_flow_style=False, sort_keys=False), file=sys.stderr)
+                print("="*80 + "\n", file=sys.stderr)
+            else:
+                print(f"\nWarning: Config file not found: {config_path}\n", file=sys.stderr)
+        except Exception as e:
+            print(f"\nWarning: Failed to load config file: {e}\n", file=sys.stderr)
+    
+    # ============================================================================
+    # PRINT TRAINING PARAMETERS
+    # ============================================================================
+    print("\n" + "="*80, file=sys.stderr)
+    print("MULTIMODAL TRAINING PARAMETERS", file=sys.stderr)
+    print("="*80, file=sys.stderr)
+    training_params = {
+        "seed": seed,
+        "learning_rate": lr,
+        "epochs": epochs,
+        "batch_size": bs,
+        "drop_rate": drop_rate,
+        "warmup_steps": warmup,
+        "workers": workers,
+        "use_wandb": use_wandb,
+        "test_run": test_run,
+        # DINOv3 config
+        "dinov3_hidden_size": dinov3_hidden_size,
+        "dinov3_pretrained": dinov3_pretrained,
+        "dinov3_freeze": dinov3_freeze,
+        "dinov3_lr": dinov3_lr,
+        "dinov3_checkpoint": dinov3_checkpoint,
+        # ResNet config
+        "resnet_pretrained": resnet_pretrained,
+        "resnet_freeze": resnet_freeze,
+        "resnet_lr": resnet_lr,
+        "resnet_checkpoint": resnet_checkpoint,
+        # Fusion & Classifier
+        "fusion_type": fusion_type,
+        "fusion_output_dim": fusion_output_dim,
+        "classifier_type": classifier_type,
+        "classifier_hidden_dim": classifier_hidden_dim,
+        # Data
+        "use_s1": use_s1,
+        "resume_from": resume_from,
+    }
+    for key, value in training_params.items():
+        print(f"  {key:25s}: {value}", file=sys.stderr)
+    print("="*80 + "\n", file=sys.stderr)
     
     # ============================================================================
     # FIXED MODEL PARAMETERS
