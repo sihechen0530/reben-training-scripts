@@ -7,8 +7,10 @@ job:
   time: "01:00:00"     # HH:MM:SS
   nodes: 1
   gres: "gpu:v100-sxm2:1"     # GPU 资源规格（匹配你的 srun 命令）
+                              # 多GPU示例: "gpu:v100-sxm2:4" (4个GPU)
+                              # 或 "gpu:a100:2" (2个A100 GPU)
   cpus_per_task: 8
-  mem: "32G"
+  mem: "32G"           # 多GPU时可能需要增加内存，例如 "64G" 或 "128G"
   mail_user: "you@university.edu"
   mail_type: "END,FAIL"        # 可选：BEGIN, END, FAIL, REQUEUE, ALL
   chdir: "/home/zhou.lihan/reben-training-scripts/scripts"   # 作业工作目录
@@ -25,17 +27,24 @@ data:
   benv2_data_dir: "/home/liu.guoy/remote_sensing_mock"
 
 train:
+  # 选择训练脚本：train_BigEarthNetv2_0.py (unimodal) 或 train_multimodal.py (multimodal)
   script: "train_BigEarthNetv2_0.py"
   python: "python"   # 或 "python3"
+  
+  # ============================================================================
+  # UNIMODAL TRAINING ARGS (for train_BigEarthNetv2_0.py)
+  # ============================================================================
   # 传给 train_BigEarthNetv2_0.py 的参数（会转换为 --k v）
   args:
     architecture: "resnet18"
-    bandconfig: "s2"       # # all, s2, s1, rgb, all_full, s2_full, s1_full
+    bandconfig: "s2"       # all, s2, s1, rgb, all_full, s2_full, s1_full
     bs: 512                 # batch size (注意：参数名是 bs 不是 batch_size)
+                            # 多GPU训练时，总batch size = bs * num_gpus
+                            # 例如：4个GPU，bs=512，实际batch size = 2048
     epochs: 10             # 短测试：10 epochs
     lr: 0.001
     seed: 42
-    workers: 8
+    workers: 8             # 多GPU时，建议 workers = num_gpus * 2-4
     drop_rate: 0.15
     drop_path_rate: 0.15
     warmup: 1000
@@ -45,6 +54,69 @@ train:
     # hf_entity: "your-hf-entity"  # Required if upload_to_hub is true
     # resume_from: "best"  # or path to checkpoint
     config: "../train_scripts/config.yaml"  # Path to this config for data directory
+    # Multi-GPU configuration
+    # devices: 4            # Number of GPUs to use (None = auto-detect all)
+    # strategy: "ddp"       # Training strategy: "ddp" (recommended), "ddp_spawn", "deepspeed", etc.
+  
+  # ============================================================================
+  # MULTIMODAL TRAINING ARGS (for train_multimodal.py)
+  # ============================================================================
+  # 要使用 multimodal 训练，请设置：
+  #   train.script: "train_multimodal.py"
+  #   并使用下面的 multimodal_args 或直接修改上面的 args
+  #
+  # 多模态训练支持：
+  # 1. 多个backbone（DINOv3 + ResNet101），每个可配置：
+  #    - 输入通道数（input_channels）
+  #    - 冻结/微调（freeze）
+  #    - 学习率（lr）
+  #    - 预训练权重（pretrained）
+  #    - 检查点路径（checkpoint）
+  # 2. 多种融合策略：concat（默认）, weighted, linear_projection
+  # 3. 多种分类器：linear（默认，线性探测）, mlp
+  # ============================================================================
+  multimodal_args:
+    # 基础训练参数
+    seed: 42
+    lr: 0.001              # 主学习率（用于fusion和classifier）
+    epochs: 100
+    bs: 512                # batch size
+    drop_rate: 0.15        # dropout rate
+    warmup: 1000           # warmup steps (-1 for automatic)
+    workers: 8
+    use_wandb: false
+    test_run: false        # 设置为 true 进行快速测试
+    
+    # DINOv3 backbone 配置（处理RGB数据，3通道）
+    dinov3_hidden_size: 768  # 384 (small), 768 (base), 1024 (large), 1536 (giant)
+    dinov3_pretrained: true
+    dinov3_freeze: false     # true = 冻结backbone（线性探测）, false = 微调
+    dinov3_lr: 0.0001        # DINOv3 backbone的学习率
+    # dinov3_checkpoint: null  # 可选：从checkpoint加载DINOv3权重
+    
+    # ResNet101 backbone 配置（处理S2非RGB + 可选S1数据）
+    resnet_pretrained: true
+    resnet_freeze: false     # true = 冻结backbone, false = 微调
+    resnet_lr: 0.0001        # ResNet101 backbone的学习率
+    # resnet_checkpoint: null  # 可选：从checkpoint加载ResNet权重
+    
+    # 融合策略配置
+    fusion_type: "concat"    # 选项: concat (默认), weighted, linear_projection
+    # fusion_output_dim: null # 仅用于 linear_projection 融合（可选）
+    
+    # 分类器配置
+    classifier_type: "linear"  # 选项: linear (默认，线性探测), mlp
+    classifier_hidden_dim: 512 # 仅用于 MLP 分类器
+    
+    # 数据配置
+    use_s1: false           # true = 包含S1数据（ResNet输入11通道），false = 仅S2非RGB（9通道）
+    
+    # 训练配置
+    # resume_from: null      # 可选：从checkpoint恢复训练 ("best", "last", 或路径)
+    
+    # Multi-GPU configuration
+    # devices: 4            # Number of GPUs to use (None = auto-detect all)
+    # strategy: "ddp"       # Training strategy: "ddp" (recommended), "ddp_spawn", "deepspeed", etc.
   
   # 作业数组（超参搜索）——任选一种：
   sweep:
@@ -55,3 +127,11 @@ train:
       seed: [42, 123]
     # 方式2：从文件读取 N 行配置（与数组索引对应）
     # list_file: "sweeps.txt"
+  
+  # 多模态训练的超参搜索示例
+  # multimodal_sweep:
+  #   grid:
+  #     fusion_type: ["concat", "weighted", "linear_projection"]
+  #     classifier_type: ["linear", "mlp"]
+  #     dinov3_freeze: [true, false]
+  #     resnet_freeze: [true, false]

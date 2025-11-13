@@ -174,6 +174,223 @@ python submit.py --config my_config.yaml --sweep
 python submit.py --template my_template.sbatch
 ```
 
+### 多模态训练（Multimodal Training）
+
+多模态训练支持多个backbone、多种融合策略和分类器类型。要使用多模态训练：
+
+1. **切换到多模态训练脚本**：
+```yaml
+train:
+  script: "train_multimodal.py"  # 从 train_BigEarthNetv2_0.py 改为 train_multimodal.py
+```
+
+2. **配置多模态参数**（在 `multimodal_args` 部分）：
+```yaml
+train:
+  script: "train_multimodal.py"
+  multimodal_args:
+    # 基础参数
+    seed: 42
+    lr: 0.001
+    epochs: 100
+    bs: 512
+    
+    # DINOv3 backbone（处理RGB，3通道）
+    dinov3_hidden_size: 768      # 384 (small), 768 (base), 1024 (large), 1536 (giant)
+    dinov3_pretrained: true
+    dinov3_freeze: false         # true = 冻结（线性探测）, false = 微调
+    dinov3_lr: 0.0001
+    
+    # ResNet101 backbone（处理S2非RGB + 可选S1）
+    resnet_pretrained: true
+    resnet_freeze: false         # true = 冻结, false = 微调
+    resnet_lr: 0.0001
+    
+    # 融合策略
+    fusion_type: "concat"        # concat (默认), weighted, linear_projection
+    # fusion_output_dim: 512     # 仅用于 linear_projection
+    
+    # 分类器
+    classifier_type: "linear"    # linear (默认，线性探测), mlp
+    classifier_hidden_dim: 512  # 仅用于 MLP
+    
+    # 数据配置
+    use_s1: false               # true = 包含S1（11通道）, false = 仅S2非RGB（9通道）
+```
+
+3. **多模态训练示例**：
+
+**示例1：线性探测（冻结所有backbone）**
+```yaml
+train:
+  script: "train_multimodal.py"
+  multimodal_args:
+    dinov3_freeze: true
+    resnet_freeze: true
+    fusion_type: "concat"
+    classifier_type: "linear"
+```
+
+**示例2：加权融合 + MLP分类器**
+```yaml
+train:
+  script: "train_multimodal.py"
+  multimodal_args:
+    fusion_type: "weighted"
+    classifier_type: "mlp"
+    classifier_hidden_dim: 512
+```
+
+**示例3：包含S1数据**
+```yaml
+train:
+  script: "train_multimodal.py"
+  multimodal_args:
+    use_s1: true  # ResNet将处理11通道（9 S2非RGB + 2 S1）
+```
+
+4. **多模态超参搜索**：
+```yaml
+train:
+  script: "train_multimodal.py"
+  multimodal_args:
+    # ... 基础配置 ...
+  sweep:
+    grid:
+      fusion_type: ["concat", "weighted", "linear_projection"]
+      classifier_type: ["linear", "mlp"]
+      dinov3_freeze: [true, false]
+      resnet_freeze: [true, false]
+```
+
+### 多GPU训练（Multi-GPU Training）
+
+PyTorch Lightning支持多GPU训练，可以显著加速训练过程。
+
+#### 配置多GPU训练
+
+**方式1：通过配置文件（推荐）**
+
+在 `config.yaml` 中配置：
+
+```yaml
+job:
+  gres: "gpu:v100-sxm2:4"  # 请求4个GPU
+  mem: "64G"                # 多GPU时增加内存
+
+train:
+  args:
+    devices: 4              # 使用4个GPU
+    strategy: "ddp"         # 使用DDP策略（推荐）
+    bs: 512                 # 每个GPU的batch size
+    # 总batch size = bs * num_gpus = 512 * 4 = 2048
+```
+
+**方式2：通过命令行参数**
+
+```bash
+python scripts/train_BigEarthNetv2_0.py \
+    --devices 4 \
+    --strategy ddp \
+    --bs 512
+```
+
+#### 多GPU训练策略
+
+- **`ddp`** (推荐): DistributedDataParallel，单节点多GPU训练的最佳选择
+- **`ddp_spawn`**: DDP with spawn，适用于某些环境（Windows、Jupyter）
+- **`deepspeed`**: DeepSpeed策略，需要安装DeepSpeed库
+- **`fsdp`**: Fully Sharded Data Parallel，适用于大模型
+
+#### 重要注意事项
+
+1. **Batch Size**: 
+   - 配置的 `bs` 是每个GPU的batch size
+   - 总batch size = `bs * num_gpus`
+   - 例如：4个GPU，`bs=512` → 总batch size = 2048
+
+2. **学习率调整**:
+   - 多GPU训练时，通常需要按GPU数量线性缩放学习率
+   - 例如：单GPU `lr=0.001`，4个GPU时建议 `lr=0.004`
+   - 或者使用学习率调度器自动调整
+
+3. **Workers数量**:
+   - 建议 `workers = num_gpus * 2-4`
+   - 例如：4个GPU → `workers=8` 或 `workers=16`
+
+4. **内存需求**:
+   - 多GPU训练需要更多系统内存
+   - 建议：`mem = "32G" * num_gpus`（至少）
+
+5. **SLURM配置**:
+   ```yaml
+   job:
+     gres: "gpu:v100-sxm2:4"  # 请求4个GPU
+     nodes: 1                  # 单节点多GPU
+     cpus_per_task: 16         # 增加CPU核心数
+     mem: "64G"                # 增加内存
+   ```
+
+#### 多GPU训练示例
+
+**示例1：4个GPU训练**
+```yaml
+job:
+  gres: "gpu:v100-sxm2:4"
+  mem: "64G"
+  cpus_per_task: 16
+
+train:
+  args:
+    devices: 4
+    strategy: "ddp"
+    bs: 512
+    lr: 0.004  # 线性缩放：0.001 * 4
+    workers: 16
+```
+
+**示例2：8个GPU训练**
+```yaml
+job:
+  gres: "gpu:a100:8"
+  mem: "128G"
+  cpus_per_task: 32
+
+train:
+  args:
+    devices: 8
+    strategy: "ddp"
+    bs: 256   # 每个GPU的batch size
+    lr: 0.008  # 线性缩放：0.001 * 8
+    workers: 32
+```
+
+#### 验证多GPU训练
+
+训练开始时会看到类似输出：
+```
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+```
+
+#### 故障排查
+
+1. **CUDA out of memory**: 
+   - 减少 `bs`（每个GPU的batch size）
+   - 增加 `mem`（系统内存）
+
+2. **NCCL错误**:
+   - 确保所有GPU在同一节点上
+   - 检查网络配置（InfiniBand等）
+
+3. **训练速度没有提升**:
+   - 检查数据加载是否成为瓶颈（增加 `workers`）
+   - 确保batch size足够大
+   - 检查GPU利用率（`nvidia-smi`）
+
 ## 📊 监控作业
 
 ```bash

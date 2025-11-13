@@ -51,6 +51,11 @@ def main(
                           "If not provided, will use hostname-based directory selection."),
         run_name: str = typer.Option(None, help="Optional unique run name/identifier to prevent conflicts when running multiple trainings. "
                                                  "If not provided, will be auto-generated from hyperparameters."),
+        devices: int = typer.Option(None, help="Number of GPUs to use for training (None = auto-detect all available GPUs). "
+                                               "For multi-GPU training, set to the number of GPUs (e.g., 4 for 4 GPUs)."),
+        strategy: str = typer.Option(None, help="Training strategy for multi-GPU (None = auto-select, 'ddp' = DistributedDataParallel, "
+                                                "'ddp_spawn' = DDP with spawn, 'deepspeed' = DeepSpeed, etc.). "
+                                                "For single node multi-GPU, 'ddp' is recommended."),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -127,7 +132,7 @@ def main(
         "linear_probe": linear_probe,
         "run_name": run_name,
     }
-    trainer = default_trainer(hparams, use_wandb, test_run)
+    trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
     # Get data directories - from config file if provided, otherwise use hostname
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)

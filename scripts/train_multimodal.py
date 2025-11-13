@@ -177,6 +177,12 @@ def main(
         # Training configuration
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+        # Multi-GPU configuration
+        devices: int = typer.Option(None, help="Number of GPUs to use for training (None = auto-detect all available GPUs). "
+                                               "For multi-GPU training, set to the number of GPUs (e.g., 4 for 4 GPUs)."),
+        strategy: str = typer.Option(None, help="Training strategy for multi-GPU (None = auto-select, 'ddp' = DistributedDataParallel, "
+                                                "'ddp_spawn' = DDP with spawn, 'deepspeed' = DeepSpeed, etc.). "
+                                                "For single node multi-GPU, 'ddp' is recommended."),
 ):
     """
     Train a multimodal classification model.
@@ -423,7 +429,7 @@ def main(
         "use_s1": use_s1,
     }
     
-    trainer = default_trainer(hparams, use_wandb, test_run)
+    trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
     
     # Get data directories
     hostname, data_dirs = get_benv2_dir_dict()

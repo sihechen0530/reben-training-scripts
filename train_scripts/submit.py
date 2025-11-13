@@ -57,8 +57,18 @@ def format_sbatch_script(
     data_config = config.get('data', {})
     train_config = config.get('train', {})
     
+    # Determine which args to use based on the training script
+    train_script_name = train_config.get('script', 'train_BigEarthNetv2_0.py')
+    is_multimodal = 'multimodal' in train_script_name.lower()
+    
+    # Select appropriate args section (multimodal_args for multimodal, args for unimodal)
+    if is_multimodal:
+        default_args = train_config.get('multimodal_args', {}).copy()
+    else:
+        default_args = train_config.get('args', {}).copy()
+    
     # Merge default train args with sweep-specific overrides
-    final_train_args = train_config.get('args', {}).copy()
+    final_train_args = default_args.copy()
     if train_args:
         final_train_args.update(train_args)
     
@@ -98,8 +108,17 @@ def format_sbatch_script(
     # Prepare training arguments
     train_args_list = []
     
-    # Add no-test-run flag (disable test mode for actual training)
-    train_args_list.append('--no-test-run')
+    # Handle test_run flag (multimodal uses test_run, unimodal doesn't have this)
+    if is_multimodal:
+        # For multimodal: use test_run from config (default: false -> --no-test-run)
+        test_run = final_train_args.get('test_run', False)
+        if test_run:
+            train_args_list.append('--test-run')
+        else:
+            train_args_list.append('--no-test-run')
+    else:
+        # For unimodal: always disable test mode for actual training
+        train_args_list.append('--no-test-run')
     
     # Add data directory from config
     if 'benv2_data_dir' in data_config:
@@ -109,6 +128,10 @@ def format_sbatch_script(
     
     # Add all training arguments
     for key, value in final_train_args.items():
+        # Skip test_run for multimodal (already handled above)
+        if is_multimodal and key == 'test_run':
+            continue
+        
         # Map config -> config-path because the training script expects --config-path
         if key == 'config':
             key_formatted = 'config-path'
