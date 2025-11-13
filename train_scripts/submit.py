@@ -56,9 +56,12 @@ def format_sbatch_script(
     env_config = config.get('env', {})
     data_config = config.get('data', {})
     train_config = config.get('train', {})
-    
+
+    use_multimodal = train_config.get('use_multimodal', False)
+    args_key = 'multimodal_args' if use_multimodal else 'args'
+
     # Merge default train args with sweep-specific overrides
-    final_train_args = train_config.get('args', {}).copy()
+    final_train_args = train_config.get(args_key, {}).copy()
     if train_args:
         final_train_args.update(train_args)
     
@@ -77,7 +80,9 @@ def format_sbatch_script(
     # 1. If `train.script` is an absolute path -> use it
     # 2. If `train.script` contains a slash -> treat as relative to chdir
     # 3. If it's a plain filename -> use chdir/scripts/<name> unless chdir already is the scripts dir
-    train_script_name = train_config.get('script', 'train_BigEarthNetv2_0.py')
+    script_key = 'multimodal_script' if use_multimodal else 'script'
+    default_script = 'train_multimodal.py' if use_multimodal else 'train_BigEarthNetv2_0.py'
+    train_script_name = train_config.get(script_key, default_script)
     train_script_path = Path(train_script_name)
     if train_script_path.is_absolute():
         train_script = train_script_path

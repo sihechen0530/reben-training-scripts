@@ -176,7 +176,12 @@ def main(
         use_s1: bool = typer.Option(False, "--use-s1/--no-use-s1", help="Whether to include S1 (Sentinel-1) data. If False, only S2 non-RGB bands are used for ResNet."),
         # Training configuration
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
-                                                   "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+        config_path: str = typer.Option(
+            None,
+            help="Path to config YAML file for data directory configuration. "
+                 "If not provided, hostname-based directory selection is used.",
+        ),
 ):
     """
     Train a multimodal classification model.
@@ -426,7 +431,7 @@ def main(
     trainer = default_trainer(hparams, use_wandb, test_run)
     
     # Get data directories
-    hostname, data_dirs = get_benv2_dir_dict()
+    hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
     data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
     
     # Create data module
