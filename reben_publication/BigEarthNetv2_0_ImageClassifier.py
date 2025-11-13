@@ -55,6 +55,16 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         self.head_type = head_type.lower()
         self.mlp_hidden_dims = mlp_hidden_dims or []
         self.head_dropout = head_dropout if head_dropout is not None else getattr(config, 'drop_rate', 0.15)
+        
+        # DEBUG: Print classifier configuration
+        print(f"\n{'='*60}")
+        print(f"DEBUG: BigEarthNetv2_0_ImageClassifier initialization")
+        print(f"  linear_probe: {self.linear_probe}")
+        print(f"  head_type: {self.head_type}")
+        print(f"  mlp_hidden_dims: {self.mlp_hidden_dims}")
+        print(f"  head_dropout: {self.head_dropout}")
+        print(f"{'='*60}\n")
+        
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
         assert config.classes == 19
         
@@ -161,7 +171,12 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         Replace the default classifier with either the original linear head
         or a configurable MLP head.
         """
+        print(f"\nDEBUG: _override_classifier_head() called")
+        print(f"  self.head_type = {self.head_type}")
+        print(f"  self.mlp_hidden_dims = {self.mlp_hidden_dims}")
+        
         if not hasattr(self.model, "classifier"):
+            print(f"  WARNING: model has no 'classifier' attribute, skipping override")
             return
 
         if self.head_type not in {"linear", "mlp"}:
@@ -170,8 +185,14 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         hidden_dims = []
         if self.head_type == "mlp":
             hidden_dims = self.mlp_hidden_dims or [1024, 512]
+            print(f"  MLP mode: hidden_dims = {hidden_dims}")
+        else:
+            print(f"  Linear mode: no hidden dims")
 
         embed_dim = getattr(self.model, "embed_dim", None)
+        print(f"  embed_dim = {embed_dim}")
+        embed_dim = getattr(self.model, "embed_dim", None)
+        print(f"  embed_dim = {embed_dim}")
         if embed_dim is None:
             # Fallback to classifier input dimension
             try:
@@ -181,7 +202,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
                 embed_dim = None
 
         if embed_dim is None:
-            print("Warning: Could not determine embed_dim for classifier override; keeping default head.")
+            print("  WARNING: Could not determine embed_dim for classifier override; keeping default head.")
             return
 
         layers: List[nn.Module] = [nn.LayerNorm(embed_dim)]
@@ -196,6 +217,12 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         layers.append(nn.Dropout(self.head_dropout))
         layers.append(nn.Linear(in_dim, self.config.classes))
         self.model.classifier = nn.Sequential(*layers)
+        
+        print(f"  Classifier layers: {len(layers)}")
+        print(f"  Final classifier structure:")
+        for i, layer in enumerate(self.model.classifier):
+            print(f"    [{i}] {layer}")
+        print()
 
     def training_step(self, batch, batch_idx):
         x, y = batch
