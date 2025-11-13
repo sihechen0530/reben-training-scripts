@@ -58,9 +58,19 @@ def main(
             None,
             help="Dropout probability for the classification head. Defaults to drop_rate when not set.",
         ),
-    config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
-                          "If not provided, will use hostname-based directory selection."),
+        config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
+                                               "If not provided, will use hostname-based directory selection."),
 ):
+    # DEBUG: Print received parameters
+    print(f"\n{'='*80}")
+    print(f"DEBUG: train_BigEarthNetv2_0.py - Received parameters:")
+    print(f"  architecture: {architecture}")
+    print(f"  linear_probe: {linear_probe}")
+    print(f"  head_type: {head_type}")
+    print(f"  head_mlp_dims: {head_mlp_dims}")
+    print(f"  head_dropout: {head_dropout}")
+    print(f"{'='*80}\n")
+    
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
     # FIXED MODEL PARAMETERS
