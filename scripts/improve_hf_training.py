@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 from warnings import warn
 from pathlib import Path
 
@@ -17,7 +18,14 @@ from configilm.extra.BENv2_utils import resolve_data_dir
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 from scripts.load_BigEarthNetv2_0_pretrained_from_hf import download_and_evaluate_model
-from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm
+from scripts.utils import (
+    default_dm,
+    default_trainer,
+    get_benv2_dir_dict,
+    get_bands,
+    get_job_run_directory,
+    upload_model_and_readme_to_hub,
+)
 
 
 def get_arch_version_bandconfig(model_name: str, config: ILMConfiguration):
@@ -73,7 +81,10 @@ def train_new_model(
         "warmup": warmup,
         "version": version,
     }
-    trainer = default_trainer(hparams, use_wandb, test_run)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    hparams["run_name"] = f"{architecture}-{bandconfig}-{seed}-{timestamp}"
+    run_dir = get_job_run_directory(hparams["run_name"])
+    trainer = default_trainer(hparams, use_wandb, test_run, ckpt_dir=run_dir)
 
     hostname, data_dirs = get_benv2_dir_dict()
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)

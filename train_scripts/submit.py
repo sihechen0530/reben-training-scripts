@@ -70,7 +70,7 @@ def format_sbatch_script(
     
     # Resolve paths
     chdir = Path(job_config.get('chdir', str(script_dir.parent))).resolve()
-    output_dir = chdir / job_config.get('output_dir', 'logs')
+    output_dir = (chdir / job_config.get('output_dir', '../ckpt_logs')).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     
     env_setup_script = script_dir / 'env_setup.sh'

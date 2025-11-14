@@ -23,6 +23,13 @@ echo "Start Time: $(date)"
 echo "Working Directory: $(pwd)"
 echo "========================================="
 
+RUN_DIR="{OUTPUT_DIR}/$SLURM_JOB_ID"
+mkdir -p "$RUN_DIR"
+SLURM_STDOUT="{OUTPUT_DIR}/{JOB_NAME}-$SLURM_JOB_ID.out"
+SLURM_STDERR="{OUTPUT_DIR}/{JOB_NAME}-$SLURM_JOB_ID.err"
+echo "Run artifacts directory: $RUN_DIR"
+echo "========================================="
+
 # Source environment setup
 source {ENV_SETUP_SCRIPT}
 
@@ -50,6 +57,14 @@ EXIT_CODE=$?
 echo "========================================="
 echo "Job finished at: $(date)"
 echo "Exit code: $EXIT_CODE"
+echo "Final artifacts stored in: $RUN_DIR"
 echo "========================================="
+
+if [ -f "$SLURM_STDOUT" ]; then
+    mv "$SLURM_STDOUT" "$RUN_DIR/slurm.out"
+fi
+if [ -f "$SLURM_STDERR" ]; then
+    mv "$SLURM_STDERR" "$RUN_DIR/slurm.err"
+fi
 
 exit $EXIT_CODE

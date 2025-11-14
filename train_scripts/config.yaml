@@ -12,7 +12,7 @@ job:
   mail_user: "you@university.edu"
   mail_type: "END,FAIL"        # 可选：BEGIN, END, FAIL, REQUEUE, ALL
   chdir: "/home/zhou.lihan/reben-training-scripts/scripts"   # 作业工作目录
-  output_dir: "../logs"           # slurm 日志目录（相对 chdir）
+  output_dir: "../ckpt_logs"           # 统一的 ckpt+log 输出目录（相对 chdir）
 
 env:
   # 训练脚本所需的环境变量（可选）
