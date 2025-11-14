@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 import os
 import socket
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import List, Mapping, Optional, Union
 
 import lightning.pytorch as pl
 import torch
@@ -75,7 +73,7 @@ BENv2_DIR_DICTS = {
 
 def get_job_run_directory(
         run_name: Optional[str] = None,
-        base_dir: Optional[Path | str] = None,
+        base_dir: Optional[Union[Path, str]] = None,
 ) -> Path:
     """
     Determine (and create) the run directory for current job.
@@ -117,7 +115,7 @@ def snapshot_config_file(config_path: Optional[str], destination_dir: Path) -> O
 
 def resolve_checkpoint_path(
         candidate: str,
-        extra_search_dirs: Optional[list[Path]] = None,
+        extra_search_dirs: Optional[List[Path]] = None,
 ) -> Path:
     """
     Resolve a checkpoint path by checking the provided candidate, common checkpoint roots,
@@ -419,7 +417,7 @@ def default_trainer(
         test_run: bool,
         devices: Optional[int] = None,
         strategy: Optional[str] = None,
-        ckpt_dir: Optional[Path | str] = None,
+        ckpt_dir: Optional[Union[Path, str]] = None,
 ):
     """
     Create a PyTorch Lightning Trainer with default configuration.

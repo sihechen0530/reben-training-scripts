@@ -4,5 +4,6 @@ wandb/
 hf_models/
 _data/
 logs
+ckpt_logs
 
 *.pyc
