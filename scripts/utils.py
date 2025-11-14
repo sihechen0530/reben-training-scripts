@@ -13,7 +13,7 @@ from huggingface_hub import HfApi
 from lightning.pytorch.loggers import WandbLogger
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 from torchvision import transforms
-from configilm.extra.DataSets.BENv2_DataSet import BENv2_DataSet
+from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
