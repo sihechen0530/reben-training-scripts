@@ -99,7 +99,29 @@ def main(
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
 
     # Use the ILMConfiguration object created above (ilm_config)
-    model = BigEarthNetv2_0_ImageClassifier(ilm_config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
+    mlp_dims = None
+    if head_mlp_dims:
+        mlp_dims = [int(dim.strip()) for dim in head_mlp_dims.split(",") if dim.strip()]
+    head_dropout_val = head_dropout if head_dropout is not None else drop_rate
+
+    model = BigEarthNetv2_0_ImageClassifier(
+        ilm_config,
+        lr=lr,
+        warmup=warmup,
+        dinov3_model_name=dinov3_name,
+        linear_probe=linear_probe,
+        head_type=head_type,
+        mlp_hidden_dims=mlp_dims,
+        head_dropout=head_dropout_val,
+    )
+
+    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
+
+    # Generate unique run name if not provided
+    if run_name is None:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{architecture}_{bandconfig}_{seed}_{timestamp}"
 
     hparams = {
         "architecture": architecture,
@@ -115,8 +137,12 @@ def main(
         "warmup": warmup,
         "version": version,
         "linear_probe": linear_probe,
+        "head_type": head_type,
+        "head_mlp_dims": mlp_dims,
+        "head_dropout": head_dropout_val,
+        "run_name": run_name,
     }
-    trainer = default_trainer(hparams, use_wandb, test_run)
+    trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
     # Get data directories - from config file if provided, otherwise use hostname
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
@@ -148,6 +174,9 @@ def main(
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
     model_name = f"{architecture}-{bandconfig}-{version}"
     model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
+    # Use run_name to prevent conflicts when running multiple trainings
+    model_name = f"{architecture}-{bandconfig}-{run_name}-{version}"
+    model.save_pretrained(f"hf_models/{model_name}", config=config)
 
     print("=== Training finished ===")
     # upload_model_and_readme_to_hub(

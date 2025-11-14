@@ -7,6 +7,7 @@ from typing import List, Optional
 import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 from configilm import ConfigILM
 from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
@@ -41,12 +42,29 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             warmup: Optional[int] = None,
             dinov3_model_name: Optional[str] = None,
             linear_probe: bool = False,
+            head_type: str = "linear",
+            mlp_hidden_dims: Optional[List[int]] = None,
+            head_dropout: Optional[float] = None,
+            **kwargs,  # Accept extra kwargs for backward compatibility
     ):
         super().__init__()
         self.lr = lr
         self.warmup = None if warmup is None or warmup < 0 else warmup
         self.config = config
         self.linear_probe = linear_probe
+        self.head_type = head_type.lower()
+        self.mlp_hidden_dims = mlp_hidden_dims or []
+        self.head_dropout = head_dropout if head_dropout is not None else getattr(config, 'drop_rate', 0.15)
+        
+        # DEBUG: Print classifier configuration
+        print(f"\n{'='*60}")
+        print(f"DEBUG: BigEarthNetv2_0_ImageClassifier initialization")
+        print(f"  linear_probe: {self.linear_probe}")
+        print(f"  head_type: {self.head_type}")
+        print(f"  mlp_hidden_dims: {self.mlp_hidden_dims}")
+        print(f"  head_dropout: {self.head_dropout}")
+        print(f"{'='*60}\n")
+        
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
         assert config.classes == 19
         
@@ -78,7 +96,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
                 elif 'large' in timm_name.lower() or 'l' in timm_name.lower():
                     dinov3_model_name = "facebook/dinov3-vitl16-pretrain-lvd1689m"
                 elif 'giant' in timm_name.lower() or 'g' in timm_name.lower():
-                    dinov3_model_name = "facebook/dinov3-vitg16-pretrain-lvd1689m"
+                    dinov3_model_name = "facebook/dinov3-vit7b16-pretrain-lvd1689m"
                 else:
                     # Default to small
                     dinov3_model_name = "facebook/dinov3-vits16-pretrain-lvd1689m"
@@ -93,6 +111,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
                 drop_path_rate=getattr(config, 'drop_path_rate', 0.0),
                 pretrained=True,
             )
+            self._override_classifier_head()
             # If linear probing, freeze backbone parameters
             if self.linear_probe:
                 for p in self.model.backbone.parameters():
@@ -146,6 +165,64 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         self.test_metrics_class = get_classification_metric_collection(
             "multilabel", None, num_labels=config.classes, prefix="test/"
         )
+
+    def _override_classifier_head(self):
+        """
+        Replace the default classifier with either the original linear head
+        or a configurable MLP head.
+        """
+        print(f"\nDEBUG: _override_classifier_head() called")
+        print(f"  self.head_type = {self.head_type}")
+        print(f"  self.mlp_hidden_dims = {self.mlp_hidden_dims}")
+        
+        if not hasattr(self.model, "classifier"):
+            print(f"  WARNING: model has no 'classifier' attribute, skipping override")
+            return
+
+        if self.head_type not in {"linear", "mlp"}:
+            raise ValueError(f"Unsupported head_type: {self.head_type}. Choose from ['linear', 'mlp'].")
+
+        hidden_dims = []
+        if self.head_type == "mlp":
+            hidden_dims = self.mlp_hidden_dims or [1024, 512]
+            print(f"  MLP mode: hidden_dims = {hidden_dims}")
+        else:
+            print(f"  Linear mode: no hidden dims")
+
+        embed_dim = getattr(self.model, "embed_dim", None)
+        print(f"  embed_dim = {embed_dim}")
+        embed_dim = getattr(self.model, "embed_dim", None)
+        print(f"  embed_dim = {embed_dim}")
+        if embed_dim is None:
+            # Fallback to classifier input dimension
+            try:
+                sample_layer = next(self.model.classifier.modules())
+                embed_dim = sample_layer.normalized_shape[0] if isinstance(sample_layer, nn.LayerNorm) else None
+            except StopIteration:
+                embed_dim = None
+
+        if embed_dim is None:
+            print("  WARNING: Could not determine embed_dim for classifier override; keeping default head.")
+            return
+
+        layers: List[nn.Module] = [nn.LayerNorm(embed_dim)]
+        in_dim = embed_dim
+
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Dropout(self.head_dropout))
+            layers.append(nn.Linear(in_dim, hidden_dim))
+            layers.append(nn.GELU())
+            in_dim = hidden_dim
+
+        layers.append(nn.Dropout(self.head_dropout))
+        layers.append(nn.Linear(in_dim, self.config.classes))
+        self.model.classifier = nn.Sequential(*layers)
+        
+        print(f"  Classifier layers: {len(layers)}")
+        print(f"  Final classifier structure:")
+        for i, layer in enumerate(self.model.classifier):
+            print(f"    [{i}] {layer}")
+        print()
 
     def training_step(self, batch, batch_idx):
         x, y = batch

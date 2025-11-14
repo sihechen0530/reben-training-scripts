@@ -325,7 +325,22 @@ def default_trainer(
         hparams: dict,
         use_wandb: bool,
         test_run: bool,
+        devices: Optional[int] = None,
+        strategy: Optional[str] = None,
 ):
+    """
+    Create a PyTorch Lightning Trainer with default configuration.
+    
+    Args:
+        hparams: Hyperparameters dictionary
+        use_wandb: Whether to use wandb logging
+        test_run: Whether this is a test run (limits batches)
+        devices: Number of GPUs to use (None = auto-detect, int = specific number)
+        strategy: Training strategy (None = auto, "ddp", "ddp_spawn", "deepspeed", etc.)
+    
+    Returns:
+        Configured PyTorch Lightning Trainer
+    """
     # we assume, that we are already logged in to wandb
     if use_wandb:
         logger = pl.loggers.WandbLogger(project="BENv2", log_model=True)
@@ -334,10 +349,12 @@ def default_trainer(
 
     logger.log_hyperparams(hparams)
 
+    # Include run_name in checkpoint filename to prevent conflicts when running multiple trainings
+    run_name = hparams.get('run_name', 'default')
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         monitor="val/MultilabelAveragePrecision_macro",
         dirpath="./checkpoints",
-        filename=f"{hparams['architecture']}-{hparams['seed']}-{hparams['channels']}-val_mAP_macro-" + "{val/MultilabelAveragePrecision_macro:.2f}",
+        filename=f"{hparams['architecture']}-{hparams['seed']}-{hparams['channels']}-{run_name}-val_mAP_macro-" + "{val/MultilabelAveragePrecision_macro:.2f}",
         save_top_k=1,
         mode="max",
         auto_insert_metric_name=False,
@@ -350,15 +367,31 @@ def default_trainer(
         mode="max",
     )
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="step")
-    trainer = pl.Trainer(
-        max_epochs=4 if test_run else hparams["epochs"],
-        limit_train_batches=4 if test_run else None,
-        limit_val_batches=3 if test_run else None,
-        limit_test_batches=5 if test_run else None,
-        logger=logger,
-        accelerator="auto",
-        callbacks=[checkpoint_callback, lr_monitor, early_stopping_callback],
-    )
+    
+    # Configure accelerator and devices for multi-GPU training
+    trainer_kwargs = {
+        "max_epochs": 4 if test_run else hparams["epochs"],
+        "limit_train_batches": 4 if test_run else None,
+        "limit_val_batches": 3 if test_run else None,
+        "limit_test_batches": 5 if test_run else None,
+        "logger": logger,
+        "accelerator": "auto",
+        "callbacks": [checkpoint_callback, lr_monitor, early_stopping_callback],
+    }
+    
+    # Add devices if specified
+    if devices is not None:
+        trainer_kwargs["devices"] = devices
+        # Auto-select strategy if not specified and using multiple devices
+        if strategy is None and devices > 1:
+            # Use DDP for multi-GPU (more efficient than ddp_spawn)
+            strategy = "ddp"
+    
+    # Add strategy if specified
+    if strategy is not None:
+        trainer_kwargs["strategy"] = strategy
+    
+    trainer = pl.Trainer(**trainer_kwargs)
     return trainer
 
 

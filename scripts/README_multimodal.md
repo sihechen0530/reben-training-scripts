@@ -153,6 +153,11 @@
 - **路径支持**: 同 `--dinov3-checkpoint`，支持绝对路径和相对于 `scripts/checkpoints/` 的相对路径
 - **说明**: 如果指定了checkpoint，会从该文件加载ResNet的权重
 
+#### `--use-resnet` / `--no-resnet` (默认: `--use-resnet`)
+- **类型**: `bool`
+- **语义**: 是否启用 ResNet101 分支
+- **说明**: 当只想训练 RGB+DINOv3 路线（例如线性探测）时，可使用 `--no-resnet` 完全关闭第二个分支。若选择 `--bandconfig=rgb`，脚本也会自动禁用 ResNet。
+
 ---
 
 ### 4. 特征融合配置参数
@@ -204,6 +209,12 @@
   - 如果启用（`--use-s1`），ResNet会处理9个S2非RGB通道 + 2个S1通道（VV, VH），共11个通道
   - 如果禁用（`--no-use-s1`，默认），ResNet只处理9个S2非RGB通道
   - **重要**：该参数必须在训练脚本中正确设置，因为它决定了ResNet的输入通道数
+
+#### `--bandconfig` (默认: None)
+- **类型**: `str`
+- **语义**: 直接指定波段组合，自动覆盖 `--use-s1`
+- **可选值**: `rgb`（仅RGB）、`s2`（RGB+S2非RGB）、`s2s1`/`multimodal`（RGB+S2非RGB+S1）
+- **说明**: 选择 `--bandconfig=rgb` 时只会加载3个RGB通道，并自动关闭 ResNet 分支；`s2s1` 等价于原默认多模态配置。
 
 ---
 
@@ -258,6 +269,17 @@ python train_multimodal.py \
 ```
 
 **重要提示**: 如果checkpoint是384维的，必须使用 `--dinov3-hidden-size 384`。如果checkpoint是768维的，必须使用 `--dinov3-hidden-size 768`。
+
+#### `--architecture` (默认: None)
+- **类型**: `str`
+- **语义**: 直接通过别名选择 DINOv3 变体
+- **用法**: `--architecture dinov3-small`
+- **可选值**:
+  - `dinov3-small` → 384维嵌入
+  - `dinov3-base` → 768维嵌入
+  - `dinov3-large` → 1024维嵌入
+  - `dinov3-giant` → 1536维嵌入
+- **说明**: 当指定该参数时，会自动覆盖 `--dinov3-hidden-size`，无需记忆具体的 embedding 维度。
 
 ### 示例3: 包含S1数据的完整训练
 
@@ -326,6 +348,22 @@ python train_multimodal.py \
     --use-wandb \
     --no-test-run
 ```
+
+### 示例7: RGB 线性探测（关闭 ResNet 分支）
+
+```bash
+python train_multimodal.py \
+  --architecture dinov3-small \
+  --lr 0.0001 \
+  --bandconfig rgb \
+  --no-use-resnet \
+  --dinov3-freeze \
+  --resnet-freeze \
+  --fusion-type linear_projection \
+  --classifier-type linear \
+  --no-test-run
+```
+该示例与本需求相同：数据只包含 RGB，两个 backbone 均冻结，仅训练线性融合 + 分类头，可以快速评估 DINOv3 提供的表示能力。
 
 ---
 

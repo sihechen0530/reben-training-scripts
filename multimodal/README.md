@@ -11,6 +11,8 @@ This module implements a multimodal architecture that:
 3. **Late Fusion** of embeddings from both backbones
 4. **Classification head** for final predictions
 
+> 💡 **Note:** If you only need the DINOv3 branch (e.g., RGB linear probing), set `config["backbones"]["resnet101"]["enabled"] = False`. The ResNet backbone will be skipped and the fusion module automatically handles the single-branch input.
+
 ## Directory Structure
 
 ```
