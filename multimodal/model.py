@@ -101,6 +101,7 @@ class MultiModalModel(nn.Module):
                     "pretrained": True,
                     "freeze": False,
                     "lr": 1e-4,
+                    "enabled": True,
                 },
             },
             "fusion": {
@@ -128,6 +129,8 @@ class MultiModalModel(nn.Module):
         
         self.config = config
         self.image_size = config.get("image_size", 120)
+        resnet_config = config.get("backbones", {}).get("resnet101", {})
+        self.use_resnet = resnet_config.get("enabled", True)
         
         # Note: RGB channel separation is now done in the Lightning module.
         # The model receives pre-separated rgb_data and non_rgb_s1_data,
@@ -150,24 +153,32 @@ class MultiModalModel(nn.Module):
         else:
             self.dinov3_backbone = dinov3_backbone
         
-        if resnet_backbone is None:
-            resnet_config = config["backbones"]["resnet101"]
-            # Get input_channels from config (defaults to 11 for backward compatibility)
-            # 9 S2 non-RGB + 2 S1 if use_s1=True, or 9 S2 non-RGB only if use_s1=False
-            input_channels = resnet_config.get("input_channels", 11)
-            self.resnet_backbone = ResNetBackbone(
-                input_channels=input_channels,
-                pretrained=resnet_config.get("pretrained", True),
-                freeze=resnet_config.get("freeze", False),
-                image_size=self.image_size,
-            )
-        else:
-            self.resnet_backbone = resnet_backbone
+        self.resnet_backbone = None
+        if self.use_resnet:
+            if resnet_backbone is None:
+                resnet_settings = config.get("backbones", {}).get("resnet101")
+                if resnet_settings is None:
+                    raise ValueError("ResNet branch is enabled but no 'resnet101' config was provided.")
+                # Get input_channels from config (defaults to 11 for backward compatibility)
+                # 9 S2 non-RGB + 2 S1 if use_s1=True, or 9 S2 non-RGB only if use_s1=False
+                input_channels = resnet_settings.get("input_channels", 11)
+                self.resnet_backbone = ResNetBackbone(
+                    input_channels=input_channels,
+                    pretrained=resnet_settings.get("pretrained", True),
+                    freeze=resnet_settings.get("freeze", False),
+                    image_size=self.image_size,
+                )
+            else:
+                self.resnet_backbone = resnet_backbone
         
         # Get feature dimensions
         dinov3_dim = self.dinov3_backbone.get_embed_dim()
-        resnet_dim = self.resnet_backbone.get_embed_dim()
-        feature_dims = [dinov3_dim, resnet_dim]
+        feature_dims = [dinov3_dim]
+        if self.use_resnet and self.resnet_backbone is not None:
+            resnet_dim = self.resnet_backbone.get_embed_dim()
+            feature_dims.append(resnet_dim)
+        else:
+            resnet_dim = None
         
         # Initialize fusion
         if fusion is None:
@@ -230,18 +241,21 @@ class MultiModalModel(nn.Module):
         
         # Store for parameter grouping (different learning rates)
         self.dinov3_lr = config["backbones"]["dinov3"].get("lr", 1e-4)
-        self.resnet_lr = config["backbones"]["resnet101"].get("lr", 1e-4)
+        self.resnet_lr = resnet_config.get("lr", 1e-4)
         
         print(f"MultiModalModel initialized:")
         print(f"  - DINOv3 backbone: {dinov3_dim} dim (frozen={self.dinov3_backbone.freeze})")
-        print(f"  - ResNet101 backbone: {resnet_dim} dim (frozen={self.resnet_backbone.freeze})")
+        if self.use_resnet and self.resnet_backbone is not None:
+            print(f"  - ResNet101 backbone: {resnet_dim} dim (frozen={self.resnet_backbone.freeze})")
+        else:
+            print("  - ResNet101 backbone: DISABLED")
         print(f"  - Fusion: {config['fusion']['type']} -> {fused_dim} dim")
         print(f"  - Classifier: {config['classifier']['type']} -> {num_classes} classes")
     
     def forward(
         self,
         rgb_data: torch.Tensor,
-        non_rgb_s1_data: torch.Tensor,
+        non_rgb_s1_data: Optional[torch.Tensor] = None,
         return_embeddings: bool = False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         """
@@ -250,7 +264,8 @@ class MultiModalModel(nn.Module):
         Args:
             rgb_data: RGB channels (S2 RGB) of shape (B, 3, H, W)
             non_rgb_s1_data: Combined S2 non-RGB + optionally S1 data of shape (B, C, H, W)
-                           where C = 9 (S2_non_RGB only) or 11 (S2_non_RGB + S1)
+                           where C = 9 (S2_non_RGB only) or 11 (S2_non_RGB + S1).
+                           Can be None when the ResNet branch is disabled.
             return_embeddings: If True, also return individual embeddings
         
         Returns:
@@ -265,20 +280,28 @@ class MultiModalModel(nn.Module):
         
         # Extract features from both backbones
         dinov3_features = self.dinov3_backbone(rgb_data)  # (B, dinov3_dim)
-        resnet_features = self.resnet_backbone(non_rgb_s1_data)  # (B, resnet_dim)
+        features = [dinov3_features]
+        embeddings: Dict[str, torch.Tensor] = {
+            "dinov3": dinov3_features,
+        }
+
+        if self.use_resnet:
+            if non_rgb_s1_data is None:
+                raise ValueError("ResNet branch is enabled but non_rgb_s1_data was not provided.")
+            if non_rgb_s1_data.numel() == 0:
+                raise ValueError("ResNet branch is enabled but received empty non_rgb_s1_data tensor.")
+            resnet_features = self.resnet_backbone(non_rgb_s1_data)  # (B, resnet_dim)
+            features.append(resnet_features)
+            embeddings["resnet"] = resnet_features
         
         # Fuse features
-        fused_features = self.fusion([dinov3_features, resnet_features])  # (B, fused_dim)
+        fused_features = self.fusion(features)  # (B, fused_dim)
         
         # Classification
         logits = self.classifier(fused_features)  # (B, num_classes)
         
         if return_embeddings:
-            embeddings = {
-                "dinov3": dinov3_features,
-                "resnet": resnet_features,
-                "fused": fused_features,
-            }
+            embeddings["fused"] = fused_features
             return logits, embeddings
         else:
             return logits
@@ -303,7 +326,7 @@ class MultiModalModel(nn.Module):
             })
         
         # ResNet101 backbone parameters
-        if not self.resnet_backbone.freeze:
+        if self.use_resnet and self.resnet_backbone is not None and not self.resnet_backbone.freeze:
             groups.append({
                 "params": self.resnet_backbone.parameters(),
                 "lr": self.resnet_lr,
@@ -311,7 +334,10 @@ class MultiModalModel(nn.Module):
             })
         
         # Fusion parameters (use average of backbone LRs or default)
-        fusion_lr = (self.dinov3_lr + self.resnet_lr) / 2
+        lr_values = [self.dinov3_lr]
+        if self.use_resnet:
+            lr_values.append(self.resnet_lr)
+        fusion_lr = sum(lr_values) / len(lr_values)
         groups.append({
             "params": self.fusion.parameters(),
             "lr": fusion_lr,
@@ -319,7 +345,7 @@ class MultiModalModel(nn.Module):
         })
         
         # Classifier parameters (use average of backbone LRs or default)
-        classifier_lr = (self.dinov3_lr + self.resnet_lr) / 2
+        classifier_lr = fusion_lr
         groups.append({
             "params": self.classifier.parameters(),
             "lr": classifier_lr,

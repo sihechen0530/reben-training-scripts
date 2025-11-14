@@ -142,6 +142,10 @@ def _infer_dinov3_model_from_checkpoint(checkpoint_path: str) -> Optional[str]:
 
 
 def main(
+    architecture: Optional[str] = typer.Option(
+        None,
+        help="Optional alias for DINOv3 model size (dinov3-small/base/large/giant). Overrides --dinov3-hidden-size when provided.",
+    ),
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
         epochs: int = typer.Option(100, help="Number of epochs"),
@@ -167,6 +171,7 @@ def main(
         resnet_checkpoint: str = typer.Option(None,
                                              help="Path to checkpoint file to load ResNet101 backbone weights from. "
                                                   "Can be absolute path or relative to scripts/checkpoints/"),
+    use_resnet: bool = typer.Option(True, "--use-resnet/--no-resnet", help="Enable or disable the ResNet branch regardless of band selection."),
         # Fusion configuration
         fusion_type: str = typer.Option("concat", help="Fusion type: concat, weighted, or linear_projection"),
         fusion_output_dim: int = typer.Option(None, help="Output dimension for linear_projection fusion (optional)"),
@@ -174,6 +179,10 @@ def main(
         classifier_type: str = typer.Option("linear", help="Classifier type: linear or mlp"),
         classifier_hidden_dim: int = typer.Option(512, help="Hidden dimension for MLP classifier"),
         # Data configuration
+        bandconfig: Optional[str] = typer.Option(
+            None,
+            help="Band configuration override. Options: rgb, s2, s2s1/multimodal. Overrides --use-s1 when provided.",
+        ),
         use_s1: bool = typer.Option(False, "--use-s1/--no-use-s1", help="Whether to include S1 (Sentinel-1) data. If False, only S2 non-RGB bands are used for ResNet."),
         # Training configuration
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
@@ -265,6 +274,9 @@ def main(
         # Data
         "use_s1": use_s1,
         "resume_from": resume_from,
+            "architecture_alias": architecture,
+            "bandconfig": bandconfig_label,
+            "use_resnet_flag": use_resnet,
     }
     for key, value in training_params.items():
         print(f"  {key:25s}: {value}", file=sys.stderr)
@@ -284,6 +296,21 @@ def main(
     # DETERMINE DINOv3 MODEL NAME FROM HIDDEN SIZE
     # ============================================================================
     # Map hidden size to model name
+    if architecture is not None:
+        arch_lower = architecture.lower().replace("_", "-")
+        if "giant" in arch_lower or arch_lower.endswith("-g"):
+            dinov3_hidden_size = 1536
+        elif "large" in arch_lower or arch_lower.endswith("-l"):
+            dinov3_hidden_size = 1024
+        elif "base" in arch_lower or arch_lower.endswith("-b"):
+            dinov3_hidden_size = 768
+        elif "small" in arch_lower or arch_lower.endswith("-s"):
+            dinov3_hidden_size = 384
+        else:
+            raise ValueError(
+                "Unknown architecture alias. Use dinov3-small, dinov3-base, dinov3-large, or dinov3-giant."
+            )
+
     hidden_size_to_model = {
         384: "facebook/dinov3-vits16-pretrain-lvd1689m",
         768: "facebook/dinov3-vitb16-pretrain-lvd1689m",
@@ -299,6 +326,30 @@ def main(
     
     dinov3_model_name = hidden_size_to_model[dinov3_hidden_size]
     print(f"Using DINOv3 model: {dinov3_model_name} (hidden_size={dinov3_hidden_size})")
+
+    # ==========================================================================
+    # DETERMINE BAND CONFIGURATION (RGB/S2/S2+S1)
+    # ==========================================================================
+    if bandconfig is not None:
+        band_alias = bandconfig.lower()
+    else:
+        band_alias = "s2s1" if use_s1 else "s2"
+    band_map = {
+        "rgb": "rgb",
+        "truecolor": "rgb",
+        "s2": "s2",
+        "s2_only": "s2",
+        "s2s1": "s2s1",
+        "all": "s2s1",
+        "multimodal": "s2s1",
+    }
+    if band_alias not in band_map:
+        raise ValueError(
+            "Unsupported bandconfig. Choose from rgb, s2, s2s1/multimodal."
+        )
+    effective_bandconfig = band_map[band_alias]
+    use_s1 = True if effective_bandconfig == "s2s1" else False if effective_bandconfig in {"rgb", "s2"} else use_s1
+    bandconfig_label = effective_bandconfig
     
     # ============================================================================
     # RESOLVE CHECKPOINT PATHS
@@ -362,16 +413,25 @@ def main(
     # Define RGB bands (must be first 3 channels for DINOv3)
     # RGB true color: B04 (Red), B03 (Green), B02 (Blue)
     rgb_bands = ["B04", "B03", "B02"]
+    full_s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
     
-    # Reorder S2 bands: RGB first, then non-RGB
-    s2_non_rgb = [b for b in s2_bands if b not in rgb_bands]
+    if bandconfig_label == "rgb":
+        s2_non_rgb = []
+    else:
+        s2_non_rgb = full_s2_non_rgb
+    
+    # Reorder S2 bands: RGB first, then non-RGB (if any)
     s2_ordered = rgb_bands + s2_non_rgb
     
     # Calculate ResNet input channels: S2 non-RGB + optionally S1
     resnet_input_channels = len(s2_non_rgb) + (len(s1_bands) if use_s1 else 0)
+    resnet_enabled = use_resnet and resnet_input_channels > 0
+    if not resnet_enabled and use_resnet and resnet_input_channels == 0:
+        print("Warning: ResNet branch disabled because no additional channels are available for the selected band configuration.")
     
     # Configure ResNet input channels in config (needed before model creation)
     config["backbones"]["resnet101"]["input_channels"] = resnet_input_channels
+    config["backbones"]["resnet101"]["enabled"] = resnet_enabled
     
     # Store band order in config for reference
     config["rgb_band_names"] = rgb_bands
@@ -383,7 +443,7 @@ def main(
     # RESOLVE RESNET CHECKPOINT PATH
     # ============================================================================
     resnet_ckpt_path = None
-    if resnet_checkpoint is not None:
+    if resnet_checkpoint is not None and resnet_enabled:
         resnet_ckpt_path_obj = Path(resnet_checkpoint)
         if not resnet_ckpt_path_obj.exists():
             resnet_ckpt_path_obj = Path("./checkpoints") / resnet_checkpoint
@@ -394,6 +454,8 @@ def main(
                 )
         resnet_ckpt_path = str(resnet_ckpt_path_obj.resolve())
         print(f"Using ResNet checkpoint: {resnet_ckpt_path}")
+    elif resnet_checkpoint is not None and not resnet_enabled:
+        print("Warning: Provided ResNet checkpoint will be ignored because the ResNet branch is disabled.")
     
     # ============================================================================
     # CREATE MODEL
@@ -403,9 +465,9 @@ def main(
         lr=lr,
         warmup=None if warmup == -1 else warmup,
         dinov3_checkpoint=dinov3_ckpt_path,
-        resnet_checkpoint=resnet_ckpt_path,
+        resnet_checkpoint=resnet_ckpt_path if resnet_enabled else None,
         freeze_dinov3=dinov3_freeze if dinov3_ckpt_path else False,
-        freeze_resnet=resnet_freeze if resnet_ckpt_path else False,
+        freeze_resnet=resnet_freeze if resnet_enabled and resnet_ckpt_path else False,
         dinov3_model_name=dinov3_model_name,
     )
     
@@ -413,7 +475,10 @@ def main(
     # REGISTER BAND CONFIGURATION WITH DATALOADER
     # ============================================================================
     # Combine: S2 (ordered: RGB + non-RGB) + optionally S1
-    if use_s1:
+    if bandconfig_label == "rgb":
+        multimodal_bands = rgb_bands
+        config_description = "RGB only"
+    elif use_s1:
         # Final order: [RGB (3), S2_non-RGB (9), S1 (2)]
         multimodal_bands = s2_ordered + s1_bands
         config_description = "Multimodal (S2 ordered + S1)"
@@ -440,7 +505,9 @@ def main(
     print("\n" + "=" * 80)
     print("MULTIMODAL TRAINING CONFIGURATION")
     print("=" * 80)
-    print(f"\nS1 Usage: {'ENABLED' if use_s1 else 'DISABLED'}")
+    print(f"\nBand configuration: {config_description} (source: {bandconfig_label})")
+    print(f"S1 Usage: {'ENABLED' if use_s1 else 'DISABLED'}")
+    print(f"ResNet branch: {'ENABLED' if resnet_enabled else 'DISABLED'} (input channels: {resnet_input_channels})")
     print(f"\nRegistered channel_configurations[{num_channels}]:")
     print(f"  Band order: {multimodal_bands}")
     print(f"  -> RGB bands (indices 0-2): {multimodal_bands[:3]}")
@@ -457,11 +524,15 @@ def main(
     
     print(f"\nModel Input Configuration:")
     print(f"  - DINOv3 input: RGB channels (indices 0-2) = {rgb_bands}")
-    if use_s1:
-        print(f"  - ResNet input: S2_non-RGB ({len(s2_non_rgb)} channels) + S1 ({len(s1_bands)} channels) = {resnet_input_channels} total")
+    if resnet_enabled:
+        if use_s1:
+            print(f"  - ResNet input: S2_non-RGB ({len(s2_non_rgb)} channels) + S1 ({len(s1_bands)} channels) = {resnet_input_channels} total")
+        else:
+            print(f"  - ResNet input: S2_non-RGB ({len(s2_non_rgb)} channels) only = {resnet_input_channels} total")
+        print(f"  - Lightning split: rgb_data = x[:, :3], non_rgb_data = x[:, 3:]")
     else:
-        print(f"  - ResNet input: S2_non-RGB ({len(s2_non_rgb)} channels) only = {resnet_input_channels} total")
-    print(f"  - Lightning split: rgb_data = x[:, :3], non_rgb_data = x[:, 3:]")
+        print("  - ResNet input: DISABLED (RGB-only branch is active)")
+        print("  - Lightning split: rgb_data only; ResNet tensor is passed as None")
     print("=" * 80 + "\n")
     
     # ============================================================================
@@ -470,6 +541,7 @@ def main(
     # Hyperparameters for logging
     hparams = {
         "architecture": "multimodal",
+        "architecture_alias": architecture,
         "seed": seed,
         "lr": lr,
         "epochs": epochs,
@@ -486,11 +558,15 @@ def main(
         "resnet_freeze": resnet_freeze,
         "resnet_lr": resnet_lr,
         "resnet_input_channels": resnet_input_channels,
+        "resnet_enabled": resnet_enabled,
+        "use_resnet_flag": use_resnet,
         "fusion_type": fusion_type,
         "classifier_type": classifier_type,
         "use_s1": use_s1,
+        "bandconfig": bandconfig_label,
     }
-    
+    devices = None
+    strategy = None
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
     
     # Get data directories

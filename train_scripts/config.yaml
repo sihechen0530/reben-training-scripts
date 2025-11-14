@@ -26,47 +26,31 @@ data:
 
 train:
   script: "train_BigEarthNetv2_0.py"
-  use_multimodal: false        # Set true to switch to train_multimodal.py
+  use_multimodal: true        # Use multimodal pipeline even when running RGB-only DINOv3
   multimodal_script: "train_multimodal.py"
   python: "python"   # 或 "python3"
   # 传给 train_BigEarthNetv2_0.py 的参数（会转换为 --k v）
-  args:
-    architecture: "dinov3-b"
-    bandconfig: "rgb"       # # all, s2, s1, rgb, all_full, s2_full, s1_full
-    bs: 32                 # batch size (注意：参数名是 bs 不是 batch_size)
-    epochs: 20             # 短测试：10 epochs
-    lr: 0.001
-    seed: 42
-    workers: 8
-    drop_rate: 0.15
-    drop_path_rate: 0.15
-    warmup: 1000
-    use_wandb: false
-    upload_to_hub: false
-    linear_probe: true  # Uncomment for DINOv3 linear probing
-    head_type: "mlp"
-    head_mlp_dims: "1024,512"
-    head_dropout: 0.2
-    # hf_entity: "your-hf-entity"  # Required if upload_to_hub is true
-    # resume_from: "best"  # or path to checkpoint - 注释掉从头开始训练
-    config: "../train_scripts/config.yaml"  # Path to this config for data directory
+  args: {}
   # 单独给多模态训练脚本的默认参数，只有 use_multimodal: true 时才会被使用
   multimodal_args:
+    architecture: "dinov3-small"
     seed: 42
-    lr: 0.001
+    lr: 0.0001
     epochs: 20
     bs: 32
     drop_rate: 0.15
     warmup: 1000
     workers: 8
     use_wandb: false
-    dinov3_hidden_size: 768   # 384/768/1024/1536 -> s/b/l/g
+    bandconfig: "rgb"
+    dinov3_hidden_size: 384   # force ViT-S backbone
     dinov3_pretrained: true
     dinov3_freeze: false
     dinov3_lr: 0.0001
-    resnet_pretrained: true
-    resnet_freeze: false
-    resnet_lr: 0.0001
+    resnet_pretrained: false
+    resnet_freeze: true
+    resnet_lr: 0.0
+    no_resnet: true
     fusion_type: "concat"
     classifier_type: "linear"
     use_s1: false

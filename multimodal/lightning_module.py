@@ -4,7 +4,7 @@ PyTorch Lightning module wrapper for MultiModalModel.
 This module provides a LightningModule wrapper that enables training
 with PyTorch Lightning, including metrics, checkpointing, and optimization.
 """
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
@@ -82,6 +82,7 @@ class MultiModalLightningModule(pl.LightningModule):
         
         # Create model
         self.model = MultiModalModel(config=config)
+        self.use_resnet = getattr(self.model, "use_resnet", True)
         
         # Load checkpoints if provided
         if dinov3_checkpoint is not None:
@@ -131,6 +132,23 @@ class MultiModalLightningModule(pl.LightningModule):
         # Output lists for validation and test
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
+
+    def _split_modalities(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Split combined tensor into RGB and optional non-RGB/S1 modalities."""
+        rgb_data = x[:, :3, :, :]
+        if self.use_resnet:
+            if x.shape[1] <= 3:
+                raise ValueError(
+                    "ResNet branch is enabled but input tensor only contains RGB channels."
+                )
+            non_rgb_s1_data = x[:, 3:, :, :]
+            if non_rgb_s1_data.shape[1] == 0:
+                raise ValueError(
+                    "ResNet branch is enabled but no additional channels were provided."
+                )
+            return rgb_data, non_rgb_s1_data
+        else:
+            return rgb_data, None
     
     def _infer_dinov3_model_from_checkpoint(self, checkpoint_path: str) -> Optional[str]:
         """
@@ -392,11 +410,8 @@ class MultiModalLightningModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         """Training step."""
         x, y = batch
-        # x is (B, C, H, W) where C = RGB (3) + S2_non-RGB (9) + optionally S1 (2)
-        # Based on channel_configurations, the order is: [RGB, S2_non-RGB, (optionally S1)]
-        # Split directly into RGB and (non-RGB + optionally S1) as the model expects
-        rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
-        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + optionally S1 (all remaining channels: 9 or 11)
+        # x is (B, C, H, W); helper splits it into RGB and optional ResNet input
+        rgb_data, non_rgb_s1_data = self._split_modalities(x)
         
         logits = self.model(rgb_data, non_rgb_s1_data)
         loss = self.loss(logits, y)
@@ -412,8 +427,7 @@ class MultiModalLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         """Validation step."""
         x, y = batch
-        rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
-        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + optionally S1 (all remaining channels: 9 or 11)
+        rgb_data, non_rgb_s1_data = self._split_modalities(x)
         
         logits = self.model(rgb_data, non_rgb_s1_data)
         loss = self.loss(logits, y)
@@ -457,8 +471,7 @@ class MultiModalLightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         """Test step."""
         x, y = batch
-        rgb_data = x[:, :3, :, :]  # RGB channels (indices 0-2)
-        non_rgb_s1_data = x[:, 3:, :, :]  # S2 non-RGB + optionally S1 (all remaining channels: 9 or 11)
+        rgb_data, non_rgb_s1_data = self._split_modalities(x)
         
         logits = self.model(rgb_data, non_rgb_s1_data)
         loss = F.binary_cross_entropy_with_logits(logits, y)
