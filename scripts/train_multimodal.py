@@ -240,49 +240,6 @@ def main(
             print(f"\nWarning: Failed to load config file: {e}\n", file=sys.stderr)
 
     # ============================================================================
-    # PRINT TRAINING PARAMETERS
-    # ============================================================================
-    print("\n" + "="*80, file=sys.stderr)
-    print("MULTIMODAL TRAINING PARAMETERS", file=sys.stderr)
-    print("="*80, file=sys.stderr)
-    training_params = {
-        "seed": seed,
-        "learning_rate": lr,
-        "epochs": epochs,
-        "batch_size": bs,
-        "drop_rate": drop_rate,
-        "warmup_steps": warmup,
-        "workers": workers,
-        "use_wandb": use_wandb,
-        "test_run": test_run,
-        # DINOv3 config
-        "dinov3_hidden_size": dinov3_hidden_size,
-        "dinov3_pretrained": dinov3_pretrained,
-        "dinov3_freeze": dinov3_freeze,
-        "dinov3_lr": dinov3_lr,
-        "dinov3_checkpoint": dinov3_checkpoint,
-        # ResNet config
-        "resnet_pretrained": resnet_pretrained,
-        "resnet_freeze": resnet_freeze,
-        "resnet_lr": resnet_lr,
-        "resnet_checkpoint": resnet_checkpoint,
-        # Fusion & Classifier
-        "fusion_type": fusion_type,
-        "fusion_output_dim": fusion_output_dim,
-        "classifier_type": classifier_type,
-        "classifier_hidden_dim": classifier_hidden_dim,
-        # Data
-        "use_s1": use_s1,
-        "resume_from": resume_from,
-            "architecture_alias": architecture,
-            "bandconfig": bandconfig_label,
-            "use_resnet_flag": use_resnet,
-    }
-    for key, value in training_params.items():
-        print(f"  {key:25s}: {value}", file=sys.stderr)
-    print("="*80 + "\n", file=sys.stderr)
-
-    # ============================================================================
     # FIXED MODEL PARAMETERS
     # ============================================================================
     num_classes = 19
@@ -350,6 +307,49 @@ def main(
     effective_bandconfig = band_map[band_alias]
     use_s1 = True if effective_bandconfig == "s2s1" else False if effective_bandconfig in {"rgb", "s2"} else use_s1
     bandconfig_label = effective_bandconfig
+
+    # ============================================================================
+    # PRINT TRAINING PARAMETERS (after band config is resolved)
+    # ============================================================================
+    print("\n" + "="*80, file=sys.stderr)
+    print("MULTIMODAL TRAINING PARAMETERS", file=sys.stderr)
+    print("="*80, file=sys.stderr)
+    training_params = {
+        "seed": seed,
+        "learning_rate": lr,
+        "epochs": epochs,
+        "batch_size": bs,
+        "drop_rate": drop_rate,
+        "warmup_steps": warmup,
+        "workers": workers,
+        "use_wandb": use_wandb,
+        "test_run": test_run,
+        # DINOv3 config
+        "dinov3_hidden_size": dinov3_hidden_size,
+        "dinov3_pretrained": dinov3_pretrained,
+        "dinov3_freeze": dinov3_freeze,
+        "dinov3_lr": dinov3_lr,
+        "dinov3_checkpoint": dinov3_checkpoint,
+        # ResNet config
+        "resnet_pretrained": resnet_pretrained,
+        "resnet_freeze": resnet_freeze,
+        "resnet_lr": resnet_lr,
+        "resnet_checkpoint": resnet_checkpoint,
+        # Fusion & Classifier
+        "fusion_type": fusion_type,
+        "fusion_output_dim": fusion_output_dim,
+        "classifier_type": classifier_type,
+        "classifier_hidden_dim": classifier_hidden_dim,
+        # Data / misc
+        "use_s1": use_s1,
+        "resume_from": resume_from,
+        "architecture_alias": architecture,
+        "bandconfig": bandconfig_label,
+        "use_resnet_flag": use_resnet,
+    }
+    for key, value in training_params.items():
+        print(f"  {key:25s}: {value}", file=sys.stderr)
+    print("="*80 + "\n", file=sys.stderr)
     
     # ============================================================================
     # RESOLVE CHECKPOINT PATHS
