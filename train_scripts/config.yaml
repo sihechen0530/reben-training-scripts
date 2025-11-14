@@ -1,12 +1,12 @@
 job:
   name: bigearthnet-ft
   # partition/queue 名：有的集群叫 partition，有的叫 qos，按需删改
-  partition: gpu-interactive
+  partition: gpu
   qos: normal          # 如无用，删掉即可
   account: zhou.lihan   # 若集群要求记账账号
-  time: "02:00:00"     # HH:MM:SS
+  time: "04:00:00"     # HH:MM:SS
   nodes: 1
-  gres: "gpu:v100-sxm2:1"     # GPU 资源规格（匹配你的 srun 命令）
+  gres: "gpu:a100:1"     # GPU 资源规格（匹配你的 srun 命令）
   cpus_per_task: 8
   mem: "32G"
   mail_user: "you@university.edu"
@@ -37,13 +37,13 @@ train:
     seed: 42
     lr: 0.0001
     epochs: 20
-    bs: 32
+    bs: 64
     drop_rate: 0.15
     warmup: 1000
     workers: 8
     use_wandb: false
     bandconfig: "rgb"
-    dinov3_hidden_size: 384   # force ViT-S backbone
+    dinov3_hidden_size: 384   # 384/768/1024/1536 -> s/b/l/g
     dinov3_pretrained: true
     dinov3_freeze: false
     dinov3_lr: 0.0001
