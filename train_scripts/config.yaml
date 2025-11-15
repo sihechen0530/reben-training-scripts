@@ -3,7 +3,7 @@ job:
   # partition/queue 名：有的集群叫 partition，有的叫 qos，按需删改
   partition: gpu
   qos: normal          # 如无用，删掉即可
-  account: zhou.lihan   # 若集群要求记账账号
+  account: liu.guoy   # 若集群要求记账账号
   time: "04:00:00"     # HH:MM:SS
   nodes: 1
   gres: "gpu:a100:1"     # GPU 资源规格（匹配你的 srun 命令）
@@ -11,7 +11,7 @@ job:
   mem: "32G"
   mail_user: "you@university.edu"
   mail_type: "END,FAIL"        # 可选：BEGIN, END, FAIL, REQUEUE, ALL
-  chdir: "/home/zhou.lihan/reben-training-scripts/scripts"   # 作业工作目录
+  chdir: "/home/liu.guoy/reben-training-scripts/scripts"   # 作业工作目录
   output_dir: "../ckpt_logs"           # 统一的 ckpt+log 输出目录（相对 chdir）
 
 env:
