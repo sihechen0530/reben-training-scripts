@@ -1,6 +1,9 @@
+import os
 import socket
+import shutil
+from datetime import datetime
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import List, Mapping, Optional, Union
 
 import lightning.pytorch as pl
 import torch
@@ -11,6 +14,10 @@ from lightning.pytorch.loggers import WandbLogger
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 from torchvision import transforms
 from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+DEFAULT_CKPT_LOG_ROOT = PROJECT_ROOT / "ckpt_logs"
 
 
 _s1_bands = ["VV", "VH"]
@@ -62,6 +69,89 @@ BENv2_DIR_DICTS = {
     'pluto': BENv2_DIR_DICT_PLUTO,
     'default': BENv2_DIR_DICT_DEFAULT,
 }
+
+
+def get_job_run_directory(
+        run_name: Optional[str] = None,
+        base_dir: Optional[Union[Path, str]] = None,
+) -> Path:
+    """
+    Determine (and create) the run directory for current job.
+
+    Priority:
+        1. SLURM_JOB_ID (preferred for sbatch workflows)
+        2. Provided run_name (if any)
+        3. Timestamp-based fallback
+    """
+    base_path = Path(base_dir) if base_dir is not None else DEFAULT_CKPT_LOG_ROOT
+    job_id = os.environ.get("SLURM_JOB_ID") or os.environ.get("JOB_ID")
+
+    if job_id:
+        run_dir = base_path / job_id
+    else:
+        suffix = run_name or datetime.now().strftime("local_%Y%m%d_%H%M%S")
+        run_dir = base_path / suffix
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def snapshot_config_file(config_path: Optional[str], destination_dir: Path) -> Optional[Path]:
+    """
+    Copy the YAML config that launched the job into the destination directory for traceability.
+    """
+    if not config_path:
+        return None
+
+    src = Path(config_path).expanduser()
+    if not src.exists():
+        return None
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    dst = destination_dir / src.name
+    shutil.copy2(src, dst)
+    return dst
+
+
+def resolve_checkpoint_path(
+        candidate: str,
+        extra_search_dirs: Optional[List[Path]] = None,
+) -> Path:
+    """
+    Resolve a checkpoint path by checking the provided candidate, common checkpoint roots,
+    and performing a recursive search inside ckpt_logs if needed.
+    """
+    possible_paths = []
+    candidate_path = Path(candidate).expanduser()
+    possible_paths.append(candidate_path)
+
+    default_dirs = extra_search_dirs[:] if extra_search_dirs else []
+    default_dirs.extend([
+        DEFAULT_CKPT_LOG_ROOT,
+        SCRIPT_DIR / "ckpt_logs",
+        SCRIPT_DIR / "checkpoints",
+        Path("./ckpt_logs"),
+        Path("./checkpoints"),
+    ])
+
+    for base in default_dirs:
+        possible_paths.append(base / candidate)
+
+    for path in possible_paths:
+        if path.exists():
+            return path.resolve()
+
+    # As a last resort, search recursively inside ckpt_logs for matching filename
+    for search_root in [DEFAULT_CKPT_LOG_ROOT, SCRIPT_DIR / "ckpt_logs", Path("./ckpt_logs")]:
+        if search_root.exists():
+            matches = list(search_root.rglob(candidate))
+            if matches:
+                return matches[0].resolve()
+
+    raise FileNotFoundError(
+        f"Checkpoint not found: {candidate}\n"
+        f"Searched locations: {', '.join(str(p) for p in possible_paths)}"
+    )
 
 
 def get_benv2_dir_dict(config_path: Optional[str] = None) -> tuple[str, dict]:
@@ -327,6 +417,7 @@ def default_trainer(
         test_run: bool,
         devices: Optional[int] = None,
         strategy: Optional[str] = None,
+        ckpt_dir: Optional[Union[Path, str]] = None,
 ):
     """
     Create a PyTorch Lightning Trainer with default configuration.
@@ -349,11 +440,18 @@ def default_trainer(
 
     logger.log_hyperparams(hparams)
 
-    # Include run_name in checkpoint filename to prevent conflicts when running multiple trainings
+    # Include run_name in filename to prevent conflicts when running multiple trainings
     run_name = hparams.get('run_name', 'default')
+    ckpt_root = Path(ckpt_dir) if ckpt_dir is not None else get_job_run_directory(run_name)
+    if ckpt_root.name == "checkpoints":
+        dirpath = ckpt_root
+    else:
+        dirpath = ckpt_root / "checkpoints"
+    dirpath.mkdir(parents=True, exist_ok=True)
+
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         monitor="val/MultilabelAveragePrecision_macro",
-        dirpath="./checkpoints",
+        dirpath=str(dirpath.resolve()),
         filename=f"{hparams['architecture']}-{hparams['seed']}-{hparams['channels']}-{run_name}-val_mAP_macro-" + "{val/MultilabelAveragePrecision_macro:.2f}",
         save_top_k=1,
         mode="max",

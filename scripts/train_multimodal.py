@@ -23,6 +23,7 @@ The dataloader will stack bands in this exact order, so:
 Therefore, we can safely extract RGB as: rgb_data = x[:, :3, :, :]
 """
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Add parent directory to path to allow importing multimodal module
@@ -40,7 +41,14 @@ from configilm.extra.BENv2_utils import resolve_data_dir, STANDARD_BANDS
 from configilm.extra.DataSets.BENv2_DataSet import BENv2DataSet
 
 from multimodal.lightning_module import MultiModalLightningModule
-from scripts.utils import get_benv2_dir_dict, default_trainer, default_dm
+from scripts.utils import (
+    default_dm,
+    default_trainer,
+    get_benv2_dir_dict,
+    get_job_run_directory,
+    resolve_checkpoint_path,
+    snapshot_config_file,
+)
 
 __author__ = "BIFOLD/RSiM TU Berlin"
 
@@ -192,6 +200,10 @@ def main(
             help="Path to config YAML file for data directory configuration. "
                  "If not provided, hostname-based directory selection is used.",
         ),
+        run_name: str = typer.Option(
+            None,
+            help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>.",
+        ),
 ):
     """
     Train a multimodal classification model.
@@ -308,6 +320,16 @@ def main(
     use_s1 = True if effective_bandconfig == "s2s1" else False if effective_bandconfig in {"rgb", "s2"} else use_s1
     bandconfig_label = effective_bandconfig
 
+    if run_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{architecture}-{bandconfig_label}-{seed}-{timestamp}"
+
+    run_dir = get_job_run_directory(run_name)
+    print(f"\n[Run Directory] Artifacts will be saved in: {run_dir.resolve()}\n")
+    copied_config = snapshot_config_file(config_path, run_dir)
+    if copied_config:
+        print(f"[Config Snapshot] Copied {copied_config} into run directory for reproducibility.", file=sys.stderr)
+
     # ============================================================================
     # PRINT TRAINING PARAMETERS (after band config is resolved)
     # ============================================================================
@@ -356,15 +378,13 @@ def main(
     # ============================================================================
     dinov3_ckpt_path = None
     if dinov3_checkpoint is not None:
-        dinov3_ckpt_path_obj = Path(dinov3_checkpoint)
-        if not dinov3_ckpt_path_obj.exists():
-            dinov3_ckpt_path_obj = Path("./checkpoints") / dinov3_checkpoint
-            if not dinov3_ckpt_path_obj.exists():
-                raise FileNotFoundError(
-                    f"DINOv3 checkpoint not found: {dinov3_checkpoint}\n"
-                    f"Tried: {dinov3_checkpoint} and ./checkpoints/{dinov3_checkpoint}"
-                )
-        dinov3_ckpt_path = str(dinov3_ckpt_path_obj.resolve())
+        try:
+            dinov3_ckpt_path = str(resolve_checkpoint_path(dinov3_checkpoint))
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"DINOv3 checkpoint not found: {dinov3_checkpoint}\n"
+                f"Searched default folders inside ckpt_logs/ and legacy checkpoints/."
+            ) from exc
         print(f"Using DINOv3 checkpoint: {dinov3_ckpt_path}")
         print(f"  Note: Model size is determined by --dinov3-hidden-size={dinov3_hidden_size}, not inferred from checkpoint")
     
@@ -444,15 +464,13 @@ def main(
     # ============================================================================
     resnet_ckpt_path = None
     if resnet_checkpoint is not None and resnet_enabled:
-        resnet_ckpt_path_obj = Path(resnet_checkpoint)
-        if not resnet_ckpt_path_obj.exists():
-            resnet_ckpt_path_obj = Path("./checkpoints") / resnet_checkpoint
-            if not resnet_ckpt_path_obj.exists():
-                raise FileNotFoundError(
-                    f"ResNet checkpoint not found: {resnet_checkpoint}\n"
-                    f"Tried: {resnet_checkpoint} and ./checkpoints/{resnet_checkpoint}"
-                )
-        resnet_ckpt_path = str(resnet_ckpt_path_obj.resolve())
+        try:
+            resnet_ckpt_path = str(resolve_checkpoint_path(resnet_checkpoint))
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"ResNet checkpoint not found: {resnet_checkpoint}\n"
+                f"Searched ckpt_logs/ subfolders and legacy ./checkpoints/."
+            ) from exc
         print(f"Using ResNet checkpoint: {resnet_ckpt_path}")
     elif resnet_checkpoint is not None and not resnet_enabled:
         print("Warning: Provided ResNet checkpoint will be ignored because the ResNet branch is disabled.")
@@ -564,10 +582,18 @@ def main(
         "classifier_type": classifier_type,
         "use_s1": use_s1,
         "bandconfig": bandconfig_label,
+        "run_name": run_name,
     }
     devices = None
     strategy = None
-    trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
+    trainer = default_trainer(
+        hparams,
+        use_wandb,
+        test_run,
+        devices=devices,
+        strategy=strategy,
+        ckpt_dir=run_dir,
+    )
     
     # Get data directories
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
@@ -585,15 +611,15 @@ def main(
             ckpt_path = resume_from.lower()
             print(f"Resuming from {resume_from} checkpoint (will be resolved by Lightning)")
         else:
-            ckpt_path_obj = Path(resume_from)
-            if not ckpt_path_obj.exists():
-                ckpt_path_obj = Path("./checkpoints") / resume_from
-                if not ckpt_path_obj.exists():
-                    raise FileNotFoundError(
-                        f"Checkpoint not found: {resume_from}\n"
-                        f"Tried: {resume_from} and ./checkpoints/{resume_from}"
-                    )
-            ckpt_path = str(ckpt_path_obj.resolve())
+            try:
+                ckpt_path_obj = resolve_checkpoint_path(resume_from)
+            except FileNotFoundError as exc:
+                raise FileNotFoundError(
+                    f"Checkpoint not found: {resume_from}\n"
+                    f"Looked in ckpt_logs/ (per-job folders) and legacy ./checkpoints/. "
+                    f"Provide an absolute path if the checkpoint lives elsewhere."
+                ) from exc
+            ckpt_path = str(ckpt_path_obj)
             print(f"Resuming training from checkpoint: {ckpt_path}")
     
     # ============================================================================
