@@ -523,6 +523,21 @@ class MultiModalLightningModule(pl.LightningModule):
                     if group["name"] == "resnet101_backbone":
                         group["lr"] = self.config["backbones"]["resnet101"].get("lr", self.lr)
         
+        # Override fusion and classifier learning rates
+        # If backbones are frozen (lr=0), fusion and classifier should use the main lr
+        for group in param_groups:
+            if group["name"] in ["fusion", "classifier"]:
+                # Use main lr if fusion/classifier lr was computed as 0 (backbones frozen)
+                if group["lr"] == 0.0:
+                    group["lr"] = self.lr
+                # Also allow explicit config override if provided
+                if self.config and "fusion" in self.config and group["name"] == "fusion":
+                    if "lr" in self.config["fusion"]:
+                        group["lr"] = self.config["fusion"]["lr"]
+                if self.config and "classifier" in self.config and group["name"] == "classifier":
+                    if "lr" in self.config["classifier"]:
+                        group["lr"] = self.config["classifier"]["lr"]
+        
         optimizer = torch.optim.AdamW(param_groups, lr=self.lr, weight_decay=0.01)
         
         # Calculate warmup steps
