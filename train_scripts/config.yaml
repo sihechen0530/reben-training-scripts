@@ -49,9 +49,11 @@ train:
     dinov3_hidden_size: 384   # 384/768/1024/1536 -> s/b/l/g
     dinov3_pretrained: true
     dinov3_freeze: true
+    dinov3-checkpoint: /home/chen.sihe1/documents/cs6140/reben-training-scripts/scripts/checkpoint_b.1/dinov3-large-42-3-dinov3-large_rgb_42_20251107_120819-val_mAP_macro-0.79.ckpt
     dinov3_lr: 0.0
     resnet_pretrained: false
     resnet_freeze: true
+    resnet-checkpoint: /home/liu.guoy/reben-training-scripts/scripts/resnet101/lr0.001/resnet101-42-11-val_mAP_macro-0.77.ckpt
     resnet_lr: 0.0
     resnet_resume_from: null  # 绝对路径或相对 scripts/ 的路径，用于加载已有 ResNet backbone
     no_resnet: true
