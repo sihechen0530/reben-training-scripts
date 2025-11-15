@@ -18,11 +18,16 @@ from multimodal.fusion.fusion_module import (
     ConcatFusion,
     WeightedSumFusion,
     LinearProjectionFusion,
+    AttentionFusion,
+    BilinearFusion,
+    GatedFusion,
 )
 from multimodal.classifier.classification_head import (
     ClassifierHead,
     LinearClassifierHead,
     MLPClassifierHead,
+    SVMLikeClassifier,
+    LabelWiseBinaryClassifier,
 )
 
 
@@ -70,14 +75,17 @@ class MultiModalModel(nn.Module):
                         },
                     },
                     "fusion": {
-                        "type": "concat",  # "concat", "weighted", or "linear_projection"
-                        "output_dim": None,  # Only used for linear_projection
+                        "type": "concat",  # "concat", "weighted", "linear_projection", "attention", "bilinear", or "gated"
+                        "output_dim": None,  # Only used for linear_projection, attention, bilinear, or gated
+                        "num_heads": 1,  # Only used for attention fusion
+                        "use_low_rank": True,  # Only used for bilinear fusion
                     },
                     "classifier": {
-                        "type": "linear",  # "linear" or "mlp"
+                        "type": "linear",  # "linear", "mlp", "svm", or "labelwise_binary"
                         "hidden_dim": 512,  # Only used for mlp
                         "num_classes": 19,
                         "drop_rate": 0.15,
+                        "shared_backbone": True,  # Only used for labelwise_binary
                     },
                     "image_size": 120,
                 }
@@ -201,10 +209,39 @@ class MultiModalModel(nn.Module):
                     output_dim=output_dim,
                 )
                 fused_dim = self.fusion.get_output_dim(feature_dims)
+            elif fusion_type == "attention":
+                output_dim = fusion_config.get("output_dim", max(feature_dims))
+                num_heads = fusion_config.get("num_heads", 1)
+                self.fusion = AttentionFusion(
+                    feature_dims=feature_dims,
+                    output_dim=output_dim,
+                    num_heads=num_heads,
+                )
+                fused_dim = self.fusion.get_output_dim(feature_dims)
+            elif fusion_type == "bilinear":
+                if len(feature_dims) != 2:
+                    raise ValueError(
+                        f"Bilinear fusion requires exactly 2 backbones, got {len(feature_dims)}"
+                    )
+                output_dim = fusion_config.get("output_dim", max(feature_dims))
+                use_low_rank = fusion_config.get("use_low_rank", True)
+                self.fusion = BilinearFusion(
+                    feature_dims=feature_dims,
+                    output_dim=output_dim,
+                    use_low_rank=use_low_rank,
+                )
+                fused_dim = self.fusion.get_output_dim(feature_dims)
+            elif fusion_type == "gated":
+                output_dim = fusion_config.get("output_dim", max(feature_dims))
+                self.fusion = GatedFusion(
+                    feature_dims=feature_dims,
+                    output_dim=output_dim,
+                )
+                fused_dim = self.fusion.get_output_dim(feature_dims)
             else:
                 raise ValueError(
                     f"Unknown fusion type: {fusion_type}. "
-                    "Must be 'concat', 'weighted', or 'linear_projection'"
+                    "Must be 'concat', 'weighted', 'linear_projection', 'attention', 'bilinear', or 'gated'"
                 )
         else:
             self.fusion = fusion
@@ -231,10 +268,24 @@ class MultiModalModel(nn.Module):
                     hidden_dims=[hidden_dim],
                     drop_rate=drop_rate,
                 )
+            elif classifier_type == "svm":
+                self.classifier = SVMLikeClassifier(
+                    input_dim=fused_dim,
+                    num_classes=num_classes,
+                    drop_rate=drop_rate,
+                )
+            elif classifier_type == "labelwise_binary":
+                shared_backbone = classifier_config.get("shared_backbone", True)
+                self.classifier = LabelWiseBinaryClassifier(
+                    input_dim=fused_dim,
+                    num_classes=num_classes,
+                    drop_rate=drop_rate,
+                    shared_backbone=shared_backbone,
+                )
             else:
                 raise ValueError(
                     f"Unknown classifier type: {classifier_type}. "
-                    "Must be 'linear' or 'mlp'"
+                    "Must be 'linear', 'mlp', 'svm', or 'labelwise_binary'"
                 )
         else:
             self.classifier = classifier

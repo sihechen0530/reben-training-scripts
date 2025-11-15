@@ -181,11 +181,35 @@ def main(
                                                   "Can be absolute path or relative to scripts/checkpoints/"),
     use_resnet: bool = typer.Option(True, "--use-resnet/--no-resnet", help="Enable or disable the ResNet branch regardless of band selection."),
         # Fusion configuration
-        fusion_type: str = typer.Option("concat", help="Fusion type: concat, weighted, or linear_projection"),
-        fusion_output_dim: int = typer.Option(None, help="Output dimension for linear_projection fusion (optional)"),
+        fusion_type: str = typer.Option(
+            "concat",
+            help="Fusion type: concat, weighted, linear_projection, attention, bilinear, or gated"
+        ),
+        fusion_output_dim: int = typer.Option(
+            None,
+            help="Output dimension for fusion (used for linear_projection, attention, bilinear, gated)"
+        ),
+        fusion_num_heads: int = typer.Option(
+            1,
+            help="Number of attention heads (only used for attention fusion)"
+        ),
+        fusion_use_low_rank: bool = typer.Option(
+            True,
+            help="Whether to use low-rank approximation for bilinear fusion"
+        ),
         # Classifier configuration
-        classifier_type: str = typer.Option("linear", help="Classifier type: linear or mlp"),
-        classifier_hidden_dim: int = typer.Option(512, help="Hidden dimension for MLP classifier"),
+        classifier_type: str = typer.Option(
+            "linear",
+            help="Classifier type: linear, mlp, svm, or labelwise_binary"
+        ),
+        classifier_hidden_dim: int = typer.Option(
+            512,
+            help="Hidden dimension for MLP classifier"
+        ),
+        classifier_shared_backbone: bool = typer.Option(
+            True,
+            help="Whether to share backbone for labelwise_binary classifier"
+        ),
         # Data configuration
         bandconfig: Optional[str] = typer.Option(
             None,
@@ -377,8 +401,11 @@ def main(
         # Fusion & Classifier
         "fusion_type": fusion_type,
         "fusion_output_dim": fusion_output_dim,
+        "fusion_num_heads": fusion_num_heads,
+        "fusion_use_low_rank": fusion_use_low_rank,
         "classifier_type": classifier_type,
         "classifier_hidden_dim": classifier_hidden_dim,
+        "classifier_shared_backbone": classifier_shared_backbone,
         # Data / misc
         "use_s1": use_s1,
         "resume_from": resume_from,
@@ -433,11 +460,20 @@ def main(
         "image_size": img_size,
     }
     
-    if fusion_type == "linear_projection" and fusion_output_dim is not None:
-        config["fusion"]["output_dim"] = fusion_output_dim
+    # Configure fusion parameters
+    if fusion_type in ["linear_projection", "attention", "bilinear", "gated"]:
+        if fusion_output_dim is not None:
+            config["fusion"]["output_dim"] = fusion_output_dim
+    if fusion_type == "attention":
+        config["fusion"]["num_heads"] = fusion_num_heads
+    if fusion_type == "bilinear":
+        config["fusion"]["use_low_rank"] = fusion_use_low_rank
     
+    # Configure classifier parameters
     if classifier_type == "mlp":
         config["classifier"]["hidden_dim"] = classifier_hidden_dim
+    if classifier_type == "labelwise_binary":
+        config["classifier"]["shared_backbone"] = classifier_shared_backbone
     
     # ============================================================================
     # CONFIGURE BAND ORDER AND CALCULATE RESNET INPUT CHANNELS

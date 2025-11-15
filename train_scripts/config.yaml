@@ -39,8 +39,8 @@ train:
     architecture: "dinov3-small"
     seed: 42
     lr: 0.0001
-    epochs: 20
-    bs: 64
+    epochs: 100
+    bs: 512
     drop_rate: 0.15
     warmup: 1000
     workers: 8
@@ -48,16 +48,38 @@ train:
     bandconfig: "rgb"
     dinov3_hidden_size: 384   # 384/768/1024/1536 -> s/b/l/g
     dinov3_pretrained: true
-    dinov3_freeze: false
-    dinov3_lr: 0.0001
-    dino_resume_from: null    # 绝对路径或相对 scripts/ 的路径，用于加载已有 DINOv3 backbone
+    dinov3_freeze: true
+    dinov3_lr: 0.0
     resnet_pretrained: false
     resnet_freeze: true
     resnet_lr: 0.0
     resnet_resume_from: null  # 绝对路径或相对 scripts/ 的路径，用于加载已有 ResNet backbone
     no_resnet: true
+    # 特征融合策略 (Fusion Strategy)
+    # 可选值：
+    #   - "concat": 简单拼接，输出维度 = 所有输入维度之和（默认）
+    #   - "weighted": 加权求和，使用可学习的权重，输出维度 = 最大输入维度
+    #   - "linear_projection": 线性投影后求和，需要设置 output_dim 参数
+    #   - "attention": 注意力机制融合，支持多头注意力，需要设置 output_dim 和 num_heads 参数
+    #   - "bilinear": 双线性池化融合（仅支持2个backbone），需要设置 output_dim，推荐使用 use_low_rank=True
+    #   - "gated": 门控融合，使用可学习的门控机制，需要设置 output_dim 参数
     fusion_type: "concat"
+    # fusion_type 相关参数（仅当需要时使用）
+    # fusion_output_dim: 512  # 用于 linear_projection, attention, bilinear, gated
+    # fusion_num_heads: 4     # 用于 attention，多头注意力的头数
+    # fusion_use_low_rank: true  # 用于 bilinear，是否使用低秩近似（推荐）
+    
+    # 分类器类型 (Classifier Type)
+    # 可选值：
+    #   - "linear": 线性分类器（默认），适用于大多数情况
+    #   - "mlp": 多层感知机分类器，需要设置 hidden_dim 参数
+    #   - "svm": SVM风格分类器，支持hinge loss，适合线性可分问题
+    #   - "labelwise_binary": 标签级别的二分类器，每个类别独立二分类，适用于多标签分类
     classifier_type: "linear"
+    # classifier_type 相关参数（仅当需要时使用）
+    # classifier_hidden_dim: 512  # 用于 mlp，隐藏层维度
+    # classifier_shared_backbone: true  # 用于 labelwise_binary，是否共享特征提取器
+
     use_s1: false
     config: "../train_scripts/config.yaml"
 
