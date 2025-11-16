@@ -307,23 +307,30 @@ Examples:
   # Submit single job with default config
   python submit.py
   
+  # Submit multiple jobs with different configs
+  python submit.py --config config_small.yaml config_base.yaml config_large.yaml
+  
   # Submit hyperparameter sweep
   python submit.py --sweep
   
+  # Submit sweeps for multiple configs
+  python submit.py --config config_dinov3_small_lp.yaml config_dinov3_base_lp.yaml --sweep
+  
   # Use custom config file
-  python submit.py --config my_config.yaml --sweep
+  python submit.py --config my_config.yaml
   
   # Dry run (preview without submitting)
   python submit.py --dry-run
-  python submit.py --sweep --dry-run
+  python submit.py --config config_*.yaml --sweep --dry-run
         """
     )
     
     parser.add_argument(
         '--config',
         type=str,
-        default='config.yaml',
-        help='Path to config YAML file (default: config.yaml)'
+        nargs='+',
+        default=['config.yaml'],
+        help='Path to config YAML file(s). Can specify multiple files to submit multiple jobs. (default: config.yaml)'
     )
     parser.add_argument(
         '--template',
@@ -352,61 +359,89 @@ Examples:
     
     # Resolve paths
     script_dir = Path(__file__).parent
-    config_path = script_dir / args.config
+    
+    # Handle multiple config files
+    config_paths = [script_dir / cfg for cfg in args.config]
     template_path = script_dir / args.template
     
-    # Check if files exist
-    if not config_path.exists():
-        print(f"Error: Config file not found: {config_path}")
-        sys.exit(1)
-    
+    # Check if template exists
     if not template_path.exists():
         print(f"Error: Template file not found: {template_path}")
         sys.exit(1)
     
-    # Load configuration
-    config = load_config(str(config_path))
-    
-    print(f"Using config: {config_path}")
-    print(f"Using template: {template_path}")
-    
-    if args.sweep:
-        # Generate and submit sweep jobs
-        sweep_configs = generate_sweep_configs(config)
-        
-        if not sweep_configs:
-            print("No sweep configurations to submit.")
+    # Check if all config files exist
+    for config_path in config_paths:
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}")
             sys.exit(1)
-        
-        print(f"\nSubmitting {len(sweep_configs)} sweep jobs...")
-        
-        submitted_jobs = []
-        for sweep_args, job_suffix in sweep_configs:
-            script = format_sbatch_script(
-                str(template_path),
-                config,
-                train_args=sweep_args,
-                job_suffix=job_suffix
-            )
-            job_name = f"{config.get('job', {}).get('name', 'job')}-{job_suffix}"
-            job_id = submit_job(script, job_name, dry_run=args.dry_run)
-            if job_id:
-                submitted_jobs.append(job_id)
-        
-        if not args.dry_run:
-            print(f"\n✓ Successfully submitted {len(submitted_jobs)} jobs")
-            print(f"  Job IDs: {', '.join(submitted_jobs)}")
-    else:
-        # Submit single job
-        print("\nSubmitting single job...")
-        script = format_sbatch_script(str(template_path), config)
-        job_name = config.get('job', {}).get('name', 'bigearthnet-ft')
-        job_id = submit_job(script, job_name, dry_run=args.dry_run)
-        
-        if job_id and not args.dry_run:
-            print(f"\n✓ Successfully submitted job {job_id}")
     
-    if args.dry_run:
+    print(f"Using template: {template_path}")
+    print(f"Using {len(config_paths)} config file(s):")
+    for cfg_path in config_paths:
+        print(f"  - {cfg_path}")
+    print()
+    
+    # Track all submitted jobs across all configs
+    all_submitted_jobs = []
+    
+    # Process each config file
+    for config_idx, config_path in enumerate(config_paths):
+        # Load configuration
+        config = load_config(str(config_path))
+        
+        if len(config_paths) > 1:
+            print(f"\n{'='*60}")
+            print(f"Processing config [{config_idx + 1}/{len(config_paths)}]: {config_path.name}")
+            print(f"{'='*60}")
+        
+        if args.sweep:
+            # Generate and submit sweep jobs
+            sweep_configs = generate_sweep_configs(config)
+            
+            if not sweep_configs:
+                print(f"No sweep configurations to submit for {config_path.name}")
+                continue
+            
+            print(f"Submitting {len(sweep_configs)} sweep jobs from {config_path.name}...")
+            
+            submitted_jobs = []
+            for sweep_args, job_suffix in sweep_configs:
+                script = format_sbatch_script(
+                    str(template_path),
+                    config,
+                    train_args=sweep_args,
+                    job_suffix=job_suffix
+                )
+                job_name = f"{config.get('job', {}).get('name', 'job')}-{job_suffix}"
+                job_id = submit_job(script, job_name, dry_run=args.dry_run)
+                if job_id:
+                    submitted_jobs.append(job_id)
+                    all_submitted_jobs.append((config_path.name, job_id))
+            
+            if not args.dry_run:
+                print(f"✓ Submitted {len(submitted_jobs)} jobs from {config_path.name}")
+                print(f"  Job IDs: {', '.join(submitted_jobs)}")
+        else:
+            # Submit single job per config
+            print(f"Submitting job from {config_path.name}...")
+            script = format_sbatch_script(str(template_path), config)
+            job_name = config.get('job', {}).get('name', 'bigearthnet-ft')
+            job_id = submit_job(script, job_name, dry_run=args.dry_run)
+            
+            if job_id and not args.dry_run:
+                print(f"✓ Submitted job from {config_path.name}: {job_id}")
+                all_submitted_jobs.append((config_path.name, job_id))
+    
+    # Summary
+    if not args.dry_run and all_submitted_jobs:
+        print(f"\n{'='*60}")
+        print(f"SUBMISSION SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total jobs submitted: {len(all_submitted_jobs)}")
+        for cfg_name, job_id in all_submitted_jobs:
+            print(f"  [{cfg_name}] → Job {job_id}")
+        print(f"{'='*60}")
+    elif args.dry_run:
         print("\n(Dry run - no jobs were actually submitted)")
 
 
