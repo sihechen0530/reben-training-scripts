@@ -68,9 +68,18 @@ def format_sbatch_script(
     # Get script directory for resolving paths
     script_dir = Path(__file__).parent.resolve()
     
-    # Resolve paths
+    # Resolve chdir
     chdir = Path(job_config.get('chdir', str(script_dir.parent))).resolve()
-    output_dir = (chdir / job_config.get('output_dir', '../ckpt_logs')).resolve()
+    
+    # Resolve output_dir - support both absolute and relative paths
+    output_dir_config = job_config.get('output_dir', '../ckpt_logs')
+    output_dir_path = Path(output_dir_config)
+    if output_dir_path.is_absolute():
+        # Already absolute, use as-is
+        output_dir = output_dir_path.resolve()
+    else:
+        # Relative path, resolve relative to chdir
+        output_dir = (chdir / output_dir_config).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     
     env_setup_script = script_dir / 'env_setup.sh'
