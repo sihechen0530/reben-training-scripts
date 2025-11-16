@@ -232,6 +232,9 @@ def main(
     # ============================================================================
     # PRINT CONFIGURATION FROM YAML FILE (if provided)
     # ============================================================================
+    config_data = None
+    output_base_dir = None
+    
     if config_path:
         try:
             config_path_obj = Path(config_path)
@@ -246,6 +249,20 @@ def main(
                 print("-"*80, file=sys.stderr)
                 print(yaml.dump(config_data, default_flow_style=False, sort_keys=False), file=sys.stderr)
                 print("="*80 + "\n", file=sys.stderr)
+                
+                # Extract output_dir from config if available
+                if config_data and 'job' in config_data and 'output_dir' in config_data['job']:
+                    output_dir_config = config_data['job']['output_dir']
+                    chdir_config = config_data['job'].get('chdir', str(Path.cwd()))
+                    
+                    # Resolve output_dir (support both absolute and relative paths)
+                    output_dir_path = Path(output_dir_config)
+                    if output_dir_path.is_absolute():
+                        output_base_dir = output_dir_path.resolve()
+                    else:
+                        # Relative to chdir
+                        output_base_dir = (Path(chdir_config) / output_dir_config).resolve()
+                    print(f"[Config] Using output_dir from config: {output_base_dir}", file=sys.stderr)
             else:
                 print(f"\nWarning: Config file not found: {config_path}\n", file=sys.stderr)
         except Exception as e:
@@ -324,7 +341,7 @@ def main(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"{architecture}-{bandconfig_label}-{seed}-{timestamp}"
 
-    run_dir = get_job_run_directory(run_name)
+    run_dir = get_job_run_directory(run_name, base_dir=output_base_dir)
     print(f"\n[Run Directory] Artifacts will be saved in: {run_dir.resolve()}\n")
     copied_config = snapshot_config_file(config_path, run_dir)
     if copied_config:
