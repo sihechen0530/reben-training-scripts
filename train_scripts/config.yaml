@@ -47,9 +47,11 @@ train:
     dinov3_pretrained: true
     dinov3_freeze: false
     dinov3_lr: 0.0001
+    dino_resume_from: null    # 绝对路径或相对 scripts/ 的路径，用于加载已有 DINOv3 backbone
     resnet_pretrained: false
     resnet_freeze: true
     resnet_lr: 0.0
+    resnet_resume_from: null  # 绝对路径或相对 scripts/ 的路径，用于加载已有 ResNet backbone
     no_resnet: true
     fusion_type: "concat"
     classifier_type: "linear"

@@ -62,6 +62,21 @@ def format_sbatch_script(
 
     # Merge default train args with sweep-specific overrides
     final_train_args = train_config.get(args_key, {}).copy()
+
+    # Provide user-friendly aliases for backbone checkpoint loading in multimodal configs
+    # Users can specify dino_resume_from/resnet_resume_from in YAML and we'll forward them
+    # to the underlying train_multimodal.py CLI flags (dinov3-checkpoint/resnet-checkpoint).
+    alias_map = {
+        "dino_resume_from": "dinov3_checkpoint",
+        "dinov3_resume_from": "dinov3_checkpoint",
+        "resnet_resume_from": "resnet_checkpoint",
+    }
+    for alias_key, target_key in alias_map.items():
+        if alias_key in final_train_args:
+            value = final_train_args.pop(alias_key)
+            if value is not None and value != "":
+                # Don't override an explicitly provided target option
+                final_train_args.setdefault(target_key, value)
     if train_args:
         final_train_args.update(train_args)
     

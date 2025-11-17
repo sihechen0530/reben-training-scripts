@@ -240,6 +240,19 @@ python submit.py --config config_*.yaml --dry-run
 3. **输出隔离**：为每类实验设置独立 `job.output_dir`
 4. **Dry Run 优先**：批量提交前以 `less` 检查生成的脚本
 
+### 预置配置模板
+
+为了加速常见实验场景，`train_scripts/` 下新增了几个可直接提交的模板：
+
+| 模板 | 说明 |
+| --- | --- |
+| `config_dinov3_unimodal.yaml` | 仅使用 DINOv3（RGB）进行单模态训练，`no_resnet: true`，适合快速 baseline。 |
+| `config_multimodal_frozen.yaml` | DINOv3 + ResNet 双分支，均从已有 checkpoint 加载并冻结，用于线性探测。 |
+| `config_multimodal_resnet_unfreeze.yaml` | DINOv3 冻结，ResNet 解冻继续训练，配合 `resnet_resume_from` 复用旧权重。 |
+| `config_multimodal_finetune_all.yaml` | DINOv3 与 ResNet 全部解冻联合微调，同时展示多 GPU/更高资源配置。 |
+
+可直接 `python submit.py --config <template>.yaml`，再根据实验需求修改 `*_resume_from`、学习率、batch size 等字段。
+
 ### 故障排查
 
 - 配置文件不存在：脚本会直接报错并终止，保证不会提交任何作业
@@ -332,6 +345,22 @@ python submit.py --dry-run    # 预览
        dinov3_freeze: [true, false]
        resnet_freeze: [true, false]
    ```
+
+### ♻️ 重用已训练的 Backbone
+
+`train_multimodal.py` 支持为两个 backbone 单独指定 checkpoint，用于线性探测或继续微调：
+
+```yaml
+multimodal_args:
+  dino_resume_from: "/scratch/ckpts/dino_base.ckpt"     # → --dinov3-checkpoint
+  resnet_resume_from: "../ckpts/resnet101_s2.ckpt"       # → --resnet-checkpoint
+  dinov3_freeze: true   # 可选：加载后冻结 backbone
+  resnet_freeze: false
+```
+
+- 路径可为绝对路径或相对 `scripts/` 目录。
+- 这两个字段是 YAML 友好的别名，会在 `submit.py` 中被转换成 `--dinov3-checkpoint` 与 `--resnet-checkpoint`。
+- 如需保持旧字段，也可直接填写 `dinov3_checkpoint` / `resnet_checkpoint`，行为等价。
 
 常用片段：
 
