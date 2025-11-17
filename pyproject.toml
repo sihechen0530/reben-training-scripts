@@ -11,6 +11,7 @@ configilm = { extras = ["full"], version = "^0.7.0" }
 wandb = "^0.17.1"
 numpy = "^1.26.4"
 transformers = "^4.40.0"
+typer = "^0.12.5"
 
 ## uncomment for cuda 11
 # torch = "2.2.2"
