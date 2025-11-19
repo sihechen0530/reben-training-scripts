@@ -1,0 +1,62 @@
+job:
+  name: dinov3-resnet-ft-all
+  partition: gpu
+  qos: normal
+  account: zhou.lihan
+  time: "12:00:00"
+  nodes: 1
+  gres: "gpu:a100:2"
+  cpus_per_task: 16
+  mem: "96G"
+  mail_user: "you@university.edu"
+  mail_type: "END,FAIL"
+  chdir: "/home/zhou.lihan/reben-training-scripts/scripts"
+  output_dir: "../ckpt_logs"
+
+env:
+  OMP_NUM_THREADS: 16
+  TOKENIZERS_PARALLELISM: "false"
+
+data:
+  benv2_data_dir: "/scratch/chen.sihe1"
+
+train:
+  script: "train_BigEarthNetv2_0.py"
+  use_multimodal: true
+  multimodal_script: "train_multimodal.py"
+  python: "python"
+  args: {}
+  multimodal_args:
+    architecture: "dinov3-giant"
+    seed: 7
+    lr: 0.0002
+    epochs: 60
+    bs: 64
+    drop_rate: 0.1
+    warmup: -1              # let script auto compute
+    workers: 16
+    use_wandb: true
+    bandconfig: "s2s1"
+    dinov3_hidden_size: 1536
+    dinov3_pretrained: true
+    dinov3_freeze: false
+    dinov3_lr: 0.0001
+    dino_resume_from: null
+    resnet_pretrained: true
+    resnet_freeze: false
+    resnet_lr: 0.0003
+    resnet_resume_from: null
+    no_resnet: false
+    fusion_type: "linear_projection"
+    fusion_output_dim: 512
+    classifier_type: "mlp"
+    classifier_hidden_dim: 1024
+    use_s1: true
+    config: "../train_scripts/config_multimodal_finetune_all.yaml"
+
+  sweep:
+    grid:
+      lr: [0.00015, 0.0002]
+      dinov3_lr: [0.00005, 0.0001]
+      resnet_lr: [0.0002, 0.0003]
+      seed: [7, 21]

@@ -1,0 +1,60 @@
+job:
+  name: dinov3-resnet-unfreeze
+  partition: gpu
+  qos: normal
+  account: zhou.lihan
+  time: "08:00:00"
+  nodes: 1
+  gres: "gpu:a100:1"
+  cpus_per_task: 10
+  mem: "48G"
+  mail_user: "you@university.edu"
+  mail_type: "END,FAIL"
+  chdir: "/home/zhou.lihan/reben-training-scripts/scripts"
+  output_dir: "../ckpt_logs"
+
+env:
+  OMP_NUM_THREADS: 8
+  TOKENIZERS_PARALLELISM: "false"
+
+data:
+  benv2_data_dir: "/scratch/chen.sihe1"
+
+train:
+  script: "train_BigEarthNetv2_0.py"
+  use_multimodal: true
+  multimodal_script: "train_multimodal.py"
+  python: "python"
+  args: {}
+  multimodal_args:
+    architecture: "dinov3-large"
+    seed: 123
+    lr: 0.0004
+    epochs: 40
+    bs: 80
+    drop_rate: 0.2
+    warmup: 1000
+    workers: 12
+    use_wandb: true
+    bandconfig: "s2s1"
+    dinov3_hidden_size: 1024
+    dinov3_pretrained: true
+    dinov3_freeze: true          # keep DINO frozen
+    dinov3_lr: 0.0
+    dino_resume_from: "/path/to/dinov3_linear_probe.ckpt"
+    resnet_pretrained: true
+    resnet_freeze: false         # ResNet fully trainable
+    resnet_lr: 0.0005
+    resnet_resume_from: "/path/to/resnet_backbone.ckpt"
+    no_resnet: false
+    fusion_type: "weighted"
+    classifier_type: "mlp"
+    classifier_hidden_dim: 512
+    use_s1: true
+    config: "../train_scripts/config_multimodal_resnet_unfreeze.yaml"
+
+  sweep:
+    grid:
+      resnet_lr: [0.0003, 0.0005, 0.0007]
+      bs: [64, 80, 96]
+      drop_rate: [0.1, 0.2]
