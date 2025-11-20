@@ -130,15 +130,29 @@ class DINOv3Backbone(nn.Module):
             )
             
             # Initialize weights
+            # Industry standard (SatMAE, BERT adaptation): Keep RGB weights, zero-init new channels
             with torch.no_grad():
                 if self.num_input_channels > 3:
-                    # Repeat RGB weights for additional channels
-                    repeat_factor = (self.num_input_channels // 3) + 1
-                    weight = original_proj.weight.repeat(1, repeat_factor, 1, 1)
-                    new_proj.weight = nn.Parameter(weight[:, :self.num_input_channels, :, :])
+                    # Keep RGB weights (first 3 channels) exactly as they are
+                    # Initialize new channels (channels 3+) to ZERO
+                    # This ensures model behaves exactly like pretrained DINOv3 at step 0
+                    new_weight = torch.zeros(
+                        original_proj.out_channels,
+                        self.num_input_channels,
+                        original_proj.kernel_size[0],
+                        original_proj.kernel_size[1],
+                        device=original_proj.weight.device,
+                        dtype=original_proj.weight.dtype
+                    )
+                    # Copy RGB weights (first 3 channels) from pretrained model
+                    new_weight[:, :3, :, :] = original_proj.weight[:, :3, :, :].clone()
+                    # Channels 3+ remain zero (already initialized to zero above)
+                    new_proj.weight = nn.Parameter(new_weight)
+                    print(f"Initialized: RGB channels (0-2) from pretrained weights, "
+                          f"new channels (3-{self.num_input_channels-1}) to ZERO")
                 else:
-                    # Use subset of channels
-                    new_proj.weight = nn.Parameter(original_proj.weight[:, :self.num_input_channels, :, :])
+                    # Use subset of channels (num_input_channels <= 3)
+                    new_proj.weight = nn.Parameter(original_proj.weight[:, :self.num_input_channels, :, :].clone())
                 
                 if original_proj.bias is not None:
                     new_proj.bias = nn.Parameter(original_proj.bias.clone())
