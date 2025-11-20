@@ -361,6 +361,16 @@ def get_bands(bandconfig: str):
             f"full versions include all bands whereas the non-full versions only include the 10m & 20m bands. "
             f"rgb uses 3-channel RGB (B04, B03, B02) from Sentinel-2."
         )
+    
+    # Ensure RGB bands (B04, B03, B02) are always at the beginning in R, G, B order
+    # This is critical for DINOv3 which expects RGB in that order
+    rgb_bands = ["B04", "B03", "B02"]  # R, G, B order
+    if all(band in bands for band in rgb_bands):
+        # Remove RGB bands from their current positions
+        other_bands = [b for b in bands if b not in rgb_bands]
+        # Reorder: RGB first (R, G, B), then all other bands
+        bands = rgb_bands + other_bands
+    
     return bands, len(bands)
 
 

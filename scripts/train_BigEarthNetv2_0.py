@@ -45,10 +45,16 @@ def main(
         dinov3_model_name: str = typer.Option(None, help="DINOv3 HuggingFace model name (e.g., facebook/dinov3-base). "
                                                          "If None, will be inferred from architecture parameter."),
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
+        head_type: str = typer.Option("linear", help="Classification head type: 'linear' or 'mlp'"),
+        head_mlp_dims: str = typer.Option(None, help="Comma-separated MLP hidden dimensions (e.g., '1024,512'). Only used when head_type='mlp'"),
+        head_dropout: float = typer.Option(None, help="Dropout rate for classification head. If None, uses drop_rate"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
-    config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
+        config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
                           "If not provided, will use hostname-based directory selection."),
+        run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
+        devices: int = typer.Option(None, help="Number of GPUs to use (None = auto-detect)"),
+        strategy: str = typer.Option(None, help="Training strategy (None = auto, 'ddp', 'ddp_spawn', etc.)"),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -115,8 +121,6 @@ def main(
         head_dropout=head_dropout_val,
     )
 
-    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, linear_probe=linear_probe)
-
     # Generate unique run name if not provided
     if run_name is None:
         from datetime import datetime
@@ -176,7 +180,7 @@ def main(
     model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
     # Use run_name to prevent conflicts when running multiple trainings
     model_name = f"{architecture}-{bandconfig}-{run_name}-{version}"
-    model.save_pretrained(f"hf_models/{model_name}", config=config)
+    model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
 
     print("=== Training finished ===")
     # upload_model_and_readme_to_hub(
