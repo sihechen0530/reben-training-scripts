@@ -1,0 +1,50 @@
+job:
+  name: resnet-unimodal
+  partition: gpu
+  qos: normal
+  account: zhou.lihan
+  time: "06:00:00"
+  nodes: 1
+  gres: "gpu:a100:1"
+  cpus_per_task: 8
+  mem: "48G"
+  mail_user: "you@university.edu"
+  mail_type: "END,FAIL"
+  chdir: "/home/zhou.lihan/reben-training-scripts/scripts"
+  output_dir: "../ckpt_logs"
+
+env:
+  OMP_NUM_THREADS: 8
+  TOKENIZERS_PARALLELISM: "false"
+
+data:
+  benv2_data_dir: "/scratch/chen.sihe1"
+
+train:
+  script: "train_BigEarthNetv2_0.py"
+  use_multimodal: false
+  python: "python"
+  args:
+    architecture: "resnet101"
+    seed: 42
+    lr: 0.00015
+    epochs: 80
+    bs: 512
+    drop_rate: 0.2
+    drop_path_rate: 0.0
+    warmup: 1000
+    workers: 8
+    bandconfig: "s2_no_rgb"
+    head_type: "linear"
+    head_dropout: 0.2
+    linear_probe: false
+    use_wandb: false
+    upload_to_hub: false
+    config: "../train_scripts/config_resnet_unimodal.yaml"
+
+  sweep:
+    grid:
+      lr: [0.0001, 0.00015, 0.0002]
+      bs: [256, 512]
+      seed: [42, 77]
+      bandconfig: ["rgb", "s2_no_rgb"]
