@@ -26,11 +26,14 @@ data:
 
 train:
   script: "train_BigEarthNetv2_0.py"
-  use_multimodal: true        # Use multimodal pipeline even when running RGB-only DINOv3
+  use_multimodal: false        # Use multimodal pipeline even when running RGB-only DINOv3
   multimodal_script: "train_multimodal.py"
   python: "python"   # 或 "python3"
   # 传给 train_BigEarthNetv2_0.py 的参数（会转换为 --k v）
-  args: {}
+  args:
+    architecture: "resnet101"
+    bandconfig: "rgb"
+    config: "../train_scripts/config.yaml"
   # 单独给多模态训练脚本的默认参数，只有 use_multimodal: true 时才会被使用
   multimodal_args:
     architecture: "dinov3-small"
@@ -62,8 +65,6 @@ train:
   sweep:
     # 方式1：笛卡尔积网格（submit.py 自动展开）
     grid:
-      lr: [0.001, 0.0003]
-      bs: [32, 64]        # 注意这里也要用 bs
-      seed: [42, 123]
+      lr: [0.001, 0.0001, 0.00005]
     # 方式2：从文件读取 N 行配置（与数组索引对应）
     # list_file: "sweeps.txt"

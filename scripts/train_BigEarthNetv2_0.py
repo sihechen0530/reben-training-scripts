@@ -19,7 +19,7 @@ from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
-from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm
+from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm, get_job_run_directory, snapshot_config_file
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -126,6 +126,12 @@ def main(
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"{architecture}_{bandconfig}_{seed}_{timestamp}"
+
+    # Create run directory and snapshot config YAML for reproducibility
+    run_dir = get_job_run_directory(run_name)
+    copied_config = snapshot_config_file(config_path, run_dir)
+    if copied_config:
+        print(f"[Config Snapshot] Copied {copied_config} into run directory for reproducibility.")
 
     hparams = {
         "architecture": architecture,
