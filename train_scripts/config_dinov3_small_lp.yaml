@@ -1,0 +1,42 @@
+job:
+  name: dinov3-small-lp
+  partition: gpu
+  qos: normal
+  account: chen.sihe1   # Update with your account
+  time: "08:00:00"     # 8 hours
+  nodes: 1
+  gres: "gpu:v100-sxm2:1"
+  cpus_per_task: 8
+  mem: "32G"
+  mail_user: "chen.sihe1@northeastern.edu"  # Update with your email
+  mail_type: "END,FAIL"
+  chdir: "/home/chen.sihe1/documents/cs6140/reben-training-scripts/scripts"   # Update with your path
+  output_dir: "../scripts/checkpoints"
+
+env:
+  OMP_NUM_THREADS: 8
+  TOKENIZERS_PARALLELISM: "false"
+  # HF_TOKEN: ""  # Required for DINOv3 models (gated models on HuggingFace)
+
+data:
+  benv2_data_dir: "/scratch/chen.sihe1"  # Update with your data path
+
+train:
+  use_multimodal: true
+  multimodal_script: "train_multimodal.py"
+  python: "python"
+  args: {}
+  multimodal_args:
+    architecture: "dinov3-small"
+    lr: 0.0001
+    bs: 64
+    test_run: false
+    bandconfig: "rgb"
+    dinov3_freeze: false 
+    resnet_pretrained: false
+    resnet_freeze: true
+    resnet_lr: 0.0
+    use_resnet: false         # RGB only, disable ResNet
+    use_balanced_weights: true  # Enable balanced class weights for handling class imbalance
+    config: "../train_scripts/config_dinov3_small_lp.yaml"
+

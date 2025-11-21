@@ -48,6 +48,7 @@ from scripts.utils import (
     get_job_run_directory,
     resolve_checkpoint_path,
     snapshot_config_file,
+    save_training_metadata,
 )
 
 __author__ = "BIFOLD/RSiM TU Berlin"
@@ -152,7 +153,7 @@ def _infer_dinov3_model_from_checkpoint(checkpoint_path: str) -> Optional[str]:
 def main(
     architecture: Optional[str] = typer.Option(
         None,
-        help="Optional alias for DINOv3 model size (dinov3-small/base/large/giant). Overrides --dinov3-hidden-size when provided.",
+        help="DINOv3 model size (dinov3-small/base/large/giant). Required for DINOv3 models. Hidden size is automatically inferred from this.",
     ),
         seed: int = typer.Option(42, help="Random seed"),
         lr: float = typer.Option(0.001, help="Learning rate"),
@@ -164,14 +165,13 @@ def main(
         use_wandb: bool = typer.Option(False, "--use-wandb/--no-wandb", help="Use wandb for logging"),
         test_run: bool = typer.Option(True, "--test-run/--no-test-run", help="Run training with fewer epochs and batches"),
         # DINOv3 configuration
-        dinov3_hidden_size: int = typer.Option(768, help="DINOv3 hidden size (embedding dimension). Options: 384 (small), 768 (base, default), 1024 (large), 1536 (giant). This determines which DINOv3 model to use, even when loading from checkpoint."),
         dinov3_pretrained: bool = typer.Option(True, "--dinov3-pretrained/--no-dinov3-pretrained", help="Use pretrained DINOv3 weights"),
         dinov3_freeze: bool = typer.Option(False, "--dinov3-freeze/--no-dinov3-freeze", help="Freeze DINOv3 backbone"),
         dinov3_lr: float = typer.Option(1e-4, help="Learning rate for DINOv3 backbone"),
         dinov3_checkpoint: str = typer.Option(None, 
                                              help="Path to checkpoint file to load DINOv3 backbone weights from. "
                                                   "Can be absolute path or relative to scripts/checkpoints/. "
-                                                  "Model size is determined by --dinov3-hidden-size parameter."),
+                                                  "Model size is determined by --architecture parameter."),
         # ResNet101 configuration
         resnet_pretrained: bool = typer.Option(True, "--resnet-pretrained/--no-resnet-pretrained", help="Use pretrained ResNet101 weights"),
         resnet_freeze: bool = typer.Option(False, "--resnet-freeze/--no-resnet-freeze", help="Freeze ResNet101 backbone"),
@@ -204,6 +204,9 @@ def main(
             None,
             help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>.",
         ),
+        use_balanced_weights: bool = typer.Option(False, "--use-balanced-weights/--no-balanced-weights", 
+                                                  help="Use balanced class weights in loss function to handle class imbalance"),
+        threshold: float = typer.Option(0.5, help="Threshold for binary predictions in multi-label classification (default: 0.5)"),
 ):
     """
     Train a multimodal classification model.
@@ -279,23 +282,29 @@ def main(
     torch.set_float32_matmul_precision("medium")
     
     # ============================================================================
-    # DETERMINE DINOv3 MODEL NAME FROM HIDDEN SIZE
+    # DETERMINE DINOv3 MODEL NAME FROM ARCHITECTURE
     # ============================================================================
-    # Map hidden size to model name
-    if architecture is not None:
-        arch_lower = architecture.lower().replace("_", "-")
-        if "giant" in arch_lower or arch_lower.endswith("-g"):
-            dinov3_hidden_size = 1536
-        elif "large" in arch_lower or arch_lower.endswith("-l"):
-            dinov3_hidden_size = 1024
-        elif "base" in arch_lower or arch_lower.endswith("-b"):
-            dinov3_hidden_size = 768
-        elif "small" in arch_lower or arch_lower.endswith("-s"):
-            dinov3_hidden_size = 384
-        else:
-            raise ValueError(
-                "Unknown architecture alias. Use dinov3-small, dinov3-base, dinov3-large, or dinov3-giant."
-            )
+    # Infer hidden size from architecture name
+    if architecture is None:
+        raise ValueError(
+            "Architecture must be specified for DINOv3 models. "
+            "Use --architecture dinov3-small/base/large/giant"
+        )
+    
+    arch_lower = architecture.lower().replace("_", "-")
+    if "giant" in arch_lower or arch_lower.endswith("-g"):
+        dinov3_hidden_size = 1536
+    elif "large" in arch_lower or arch_lower.endswith("-l"):
+        dinov3_hidden_size = 1024
+    elif "base" in arch_lower or arch_lower.endswith("-b"):
+        dinov3_hidden_size = 768
+    elif "small" in arch_lower or arch_lower.endswith("-s"):
+        dinov3_hidden_size = 384
+    else:
+        raise ValueError(
+            f"Unknown architecture alias: {architecture}. "
+            "Use dinov3-small, dinov3-base, dinov3-large, or dinov3-giant."
+        )
 
     hidden_size_to_model = {
         384: "facebook/dinov3-vits16-pretrain-lvd1689m",
@@ -304,14 +313,8 @@ def main(
         1536: "facebook/dinov3-vitg16-pretrain-lvd1689m",
     }
     
-    if dinov3_hidden_size not in hidden_size_to_model:
-        raise ValueError(
-            f"Invalid dinov3_hidden_size: {dinov3_hidden_size}. "
-            f"Must be one of {list(hidden_size_to_model.keys())}"
-        )
-    
     dinov3_model_name = hidden_size_to_model[dinov3_hidden_size]
-    print(f"Using DINOv3 model: {dinov3_model_name} (hidden_size={dinov3_hidden_size})")
+    print(f"Using DINOv3 model: {dinov3_model_name} (hidden_size={dinov3_hidden_size}, inferred from architecture={architecture})")
 
     # ==========================================================================
     # DETERMINE BAND CONFIGURATION (RGB/S2/S2+S1)
@@ -403,7 +406,7 @@ def main(
                 f"Searched default folders inside ckpt_logs/ and legacy checkpoints/."
             ) from exc
         print(f"Using DINOv3 checkpoint: {dinov3_ckpt_path}")
-        print(f"  Note: Model size is determined by --dinov3-hidden-size={dinov3_hidden_size}, not inferred from checkpoint")
+        print(f"  Note: Model size is determined by --architecture={architecture} (hidden_size={dinov3_hidden_size}), not inferred from checkpoint")
     
     # ============================================================================
     # BUILD MODEL CONFIGURATION
@@ -493,8 +496,9 @@ def main(
         print("Warning: Provided ResNet checkpoint will be ignored because the ResNet branch is disabled.")
     
     # ============================================================================
-    # CREATE MODEL
+    # CREATE MODEL (class_weights will be set later if needed)
     # ============================================================================
+    class_weights = None  # Will be computed after data module is created
     model = MultiModalLightningModule(
         config=config,
         lr=lr,
@@ -504,6 +508,8 @@ def main(
         freeze_dinov3=dinov3_freeze if dinov3_ckpt_path else False,
         freeze_resnet=resnet_freeze if resnet_enabled and resnet_ckpt_path else False,
         dinov3_model_name=dinov3_model_name,
+        class_weights=None,  # Will be updated after computation
+        threshold=threshold,
     )
     
     # ============================================================================
@@ -600,6 +606,8 @@ def main(
         "use_s1": use_s1,
         "bandconfig": bandconfig_label,
         "run_name": run_name,
+        "use_balanced_weights": use_balanced_weights,
+        "threshold": threshold,
     }
     devices = None
     strategy = None
@@ -618,6 +626,88 @@ def main(
     
     # Create data module
     dm = default_dm(hparams, data_dirs, img_size)
+    
+    # Setup data module (required before accessing dataloaders)
+    dm.setup('fit')
+    
+    # ============================================================================
+    # COMPUTE CLASS WEIGHTS (if requested)
+    # ============================================================================
+    if use_balanced_weights:
+        print("\n" + "="*80)
+        print("COMPUTING BALANCED CLASS WEIGHTS")
+        print("="*80)
+        
+        # Compute class weights from training set
+        import numpy as np
+        train_loader = dm.train_dataloader()
+        all_labels = []
+        
+        print("Collecting labels from training set...")
+        for i, (x, y) in enumerate(train_loader):
+            all_labels.append(y.cpu().numpy())
+            if test_run and i >= 10:  # Limit for test runs
+                break
+        
+        all_labels = np.vstack(all_labels)
+        
+        # Compute class frequencies
+        class_counts = all_labels.sum(axis=0)  # Sum across samples for each class
+        total_samples = len(all_labels)
+        num_classes = len(class_counts)
+        
+        # Compute balanced weights: sqrt(n_samples / (n_classes * class_count))
+        # This gives higher weight to rare classes, but with reduced magnitude
+        # to prevent "False Positive Explosion"
+        weights = np.sqrt(total_samples / (num_classes * class_counts + 1e-6))
+        # Normalize so mean weight is 1.0
+        weights = weights / weights.mean()
+        
+        class_weights = torch.tensor(weights, dtype=torch.float32)
+        
+        print(f"Computed class weights (shape: {class_weights.shape})")
+        print(f"  Min weight: {class_weights.min():.4f}")
+        print(f"  Max weight: {class_weights.max():.4f}")
+        print(f"  Weight ratio (max/min): {class_weights.max() / class_weights.min():.2f}")
+        
+        # Update model's loss function with class weights
+        model.loss = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
+        print(f"Updated model loss function with balanced class weights")
+    
+    # ============================================================================
+    # SAVE TRAINING METADATA
+    # ============================================================================
+    # Build training command string for logging
+    training_cmd_parts = ["python", "scripts/train_multimodal.py"]
+    # Add key arguments (simplified representation)
+    if architecture:
+        training_cmd_parts.append(f"--architecture {architecture}")
+    training_cmd_parts.append(f"--seed {seed}")
+    training_cmd_parts.append(f"--lr {lr}")
+    training_cmd_parts.append(f"--epochs {epochs}")
+    training_cmd_parts.append(f"--bs {bs}")
+    if bandconfig:
+        training_cmd_parts.append(f"--bandconfig {bandconfig}")
+    if use_s1:
+        training_cmd_parts.append("--use-s1")
+    if use_wandb:
+        training_cmd_parts.append("--use-wandb")
+    if test_run:
+        training_cmd_parts.append("--test-run")
+    training_command = " ".join(training_cmd_parts)
+    
+    # Save comprehensive training metadata
+    saved_metadata = save_training_metadata(
+        run_dir=run_dir,
+        hparams=hparams,
+        model=model,
+        data_module=dm,
+        training_command=training_command,
+        config_path=Path(config_path) if config_path else None,
+    )
+    print(f"\n[Metadata] Saved training metadata to run directory:")
+    for metadata_type, path in saved_metadata.items():
+        print(f"  - {metadata_type}: {path}")
     
     # ============================================================================
     # HANDLE CHECKPOINT RESUME
@@ -644,7 +734,9 @@ def main(
     # ============================================================================
     trainer.fit(model, dm, ckpt_path=ckpt_path)
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
-    
+    model_name = f"{architecture}-{bandconfig}-{run_name}"
+    model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
+
     print("\n" + "=" * 80)
     print("TRAINING FINISHED")
     print("=" * 80)

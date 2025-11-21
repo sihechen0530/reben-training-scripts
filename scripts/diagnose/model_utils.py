@@ -283,12 +283,29 @@ def load_model_and_infer(
         data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
         dm = default_dm(hparams, data_dirs, img_size)
 
+        # Extract class weights from checkpoint if available
+        class_weights = None
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+            # Check if loss.pos_weight exists in checkpoint
+            if 'loss.pos_weight' in state_dict:
+                class_weights = state_dict['loss.pos_weight']
+                print(f"Loaded class weights from checkpoint (shape: {class_weights.shape})")
+                print(f"  Min weight: {class_weights.min():.4f}")
+                print(f"  Max weight: {class_weights.max():.4f}")
+        elif 'loss.pos_weight' in checkpoint:
+            class_weights = checkpoint['loss.pos_weight']
+            print(f"Loaded class weights from checkpoint (shape: {class_weights.shape})")
+            print(f"  Min weight: {class_weights.min():.4f}")
+            print(f"  Max weight: {class_weights.max():.4f}")
+
         model = BigEarthNetv2_0_ImageClassifier.load_from_checkpoint(
             str(ckpt_path),
             config=config,
             lr=lr,
             warmup=warmup,
             dinov3_model_name=dinov3_name,
+            class_weights=class_weights,  # Pass class weights to match training
         )
         model.eval()
 
@@ -437,18 +454,114 @@ def load_model_and_infer(
         data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
         dm = default_dm(hparams, data_dirs, img_size)
 
-        model = MultiModalLightningModule.load_from_checkpoint(
-            str(ckpt_path),
-            config=config,
-            lr=lr,
-            warmup=None if warmup == -1 else warmup,
-            dinov3_checkpoint=None,
-            resnet_checkpoint=None,
-            freeze_dinov3=False,
-            freeze_resnet=False,
-            dinov3_model_name=dinov3_model_name,
-            threshold=threshold,
-        )
+        # Extract class weights from checkpoint if available
+        class_weights = None
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+            # Check if loss.pos_weight exists in checkpoint
+            if 'loss.pos_weight' in state_dict:
+                class_weights = state_dict['loss.pos_weight']
+                print(f"Loaded class weights from checkpoint (shape: {class_weights.shape})")
+                print(f"  Min weight: {class_weights.min():.4f}")
+                print(f"  Max weight: {class_weights.max():.4f}")
+        elif 'loss.pos_weight' in checkpoint:
+            class_weights = checkpoint['loss.pos_weight']
+            print(f"Loaded class weights from checkpoint (shape: {class_weights.shape})")
+            print(f"  Min weight: {class_weights.min():.4f}")
+            print(f"  Max weight: {class_weights.max():.4f}")
+
+        # Load checkpoint with handling for architecture mismatches
+        try:
+            model = MultiModalLightningModule.load_from_checkpoint(
+                str(ckpt_path),
+                config=config,
+                lr=lr,
+                warmup=None if warmup == -1 else warmup,
+                dinov3_checkpoint=None,
+                resnet_checkpoint=None,
+                freeze_dinov3=False,
+                freeze_resnet=False,
+                dinov3_model_name=dinov3_model_name,
+                class_weights=class_weights,  # Pass class weights to match training
+                threshold=threshold,
+                strict=False,  # Allow partial loading for architecture mismatches
+            )
+        except RuntimeError as e:
+            # If loading fails due to key mismatches, try manual loading with filtering
+            if "size mismatch" in str(e) or "Unexpected key" in str(e):
+                print(f"Warning: Checkpoint has incompatible keys. Attempting partial load with filtering...")
+                
+                # Create model first with class weights
+                model = MultiModalLightningModule(
+                    config=config,
+                    lr=lr,
+                    warmup=None if warmup == -1 else warmup,
+                    dinov3_checkpoint=None,
+                    resnet_checkpoint=None,
+                    freeze_dinov3=False,
+                    freeze_resnet=False,
+                    dinov3_model_name=dinov3_model_name,
+                    class_weights=class_weights,  # Pass class weights to match training
+                    threshold=threshold,
+                )
+                
+                # Extract state dict from already-loaded checkpoint
+                if 'state_dict' in checkpoint:
+                    state_dict = checkpoint['state_dict']
+                else:
+                    state_dict = checkpoint
+                
+                # Filter out incompatible keys (but keep loss.pos_weight handling separate)
+                filtered_state_dict = {}
+                skipped_keys = []
+                
+                # Get model's state dict to check expected shapes
+                model_state_dict = model.state_dict()
+                
+                for key, value in state_dict.items():
+                    # Skip loss.pos_weight - it's already handled via class_weights parameter
+                    # The loss function is created with class_weights in __init__, so we don't need to load it
+                    if 'loss.pos_weight' in key:
+                        # Already handled via class_weights parameter, skip from state_dict
+                        continue
+                    
+                    # Skip classifier layers if dimensions don't match
+                    if 'classifier' in key.lower():
+                        if key in model_state_dict:
+                            expected_shape = model_state_dict[key].shape
+                            if value.shape != expected_shape:
+                                skipped_keys.append(f"{key} (shape mismatch: {value.shape} vs {expected_shape})")
+                                continue
+                        else:
+                            skipped_keys.append(f"{key} (not in model)")
+                            continue
+                    
+                    # Include all other keys
+                    filtered_state_dict[key] = value
+                
+                if skipped_keys:
+                    print(f"Filtered out {len(skipped_keys)} incompatible keys:")
+                    for key in skipped_keys[:10]:  # Show first 10
+                        print(f"  - {key}")
+                    if len(skipped_keys) > 10:
+                        print(f"  ... and {len(skipped_keys) - 10} more")
+                
+                # Load filtered state dict
+                missing_keys, unexpected_keys = model.load_state_dict(filtered_state_dict, strict=False)
+                
+                if missing_keys:
+                    print(f"Warning: {len(missing_keys)} keys were missing (using random initialization):")
+                    for key in missing_keys[:5]:
+                        print(f"  - {key}")
+                    if len(missing_keys) > 5:
+                        print(f"  ... and {len(missing_keys) - 5} more")
+                
+                if unexpected_keys:
+                    print(f"Info: {len(unexpected_keys)} unexpected keys were ignored")
+            else:
+                # Re-raise if it's a different error
+                raise
+        
         model.eval()
 
     else:
@@ -469,7 +582,16 @@ def load_model_and_infer(
     with torch.no_grad():
         for batch_idx, (x, y) in enumerate(test_loader):
             x, y = x.to(device), y.to(device)
-            logits = model(x)
+            
+            # Handle different model types
+            # Multimodal models need split input: RGB and non-RGB/S1
+            if hasattr(model, '_split_modalities'):
+                rgb_data, non_rgb_s1_data = model._split_modalities(x)
+                logits = model(rgb_data, non_rgb_s1_data)
+            else:
+                # BigEarthNet models can take the full tensor
+                logits = model(x)
+            
             probs = torch.sigmoid(logits)
             preds = (probs > threshold).long()
 

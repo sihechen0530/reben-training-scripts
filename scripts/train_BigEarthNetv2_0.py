@@ -19,7 +19,15 @@ from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
-from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm
+from scripts.utils import (
+    upload_model_and_readme_to_hub,
+    get_benv2_dir_dict,
+    get_bands,
+    default_trainer,
+    default_dm,
+    save_training_metadata,
+    get_job_run_directory,
+)
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -45,16 +53,18 @@ def main(
         dinov3_model_name: str = typer.Option(None, help="DINOv3 HuggingFace model name (e.g., facebook/dinov3-base). "
                                                          "If None, will be inferred from architecture parameter."),
         linear_probe: bool = typer.Option(False, help="Freeze DINOv3 backbone and train linear classifier only"),
-        head_type: str = typer.Option("linear", help="Classification head type: 'linear' or 'mlp'"),
-        head_mlp_dims: str = typer.Option(None, help="Comma-separated MLP hidden dimensions (e.g., '1024,512'). Only used when head_type='mlp'"),
-        head_dropout: float = typer.Option(None, help="Dropout rate for classification head. If None, uses drop_rate"),
+        head_type: str = typer.Option("linear", help="Classifier head type: linear or mlp"),
+        head_mlp_dims: str = typer.Option(None, help="MLP hidden dimensions (comma-separated, e.g., '512,256')"),
+        head_dropout: float = typer.Option(None, help="Dropout rate for classifier head (defaults to drop_rate)"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
         config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
                           "If not provided, will use hostname-based directory selection."),
-        run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
-        devices: int = typer.Option(None, help="Number of GPUs to use (None = auto-detect)"),
-        strategy: str = typer.Option(None, help="Training strategy (None = auto, 'ddp', 'ddp_spawn', etc.)"),
+        run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>."),
+        devices: int = typer.Option(None, help="Number of GPUs to use for training"),
+        strategy: str = typer.Option(None, help="Training strategy for multi-GPU"),
+        use_balanced_weights: bool = typer.Option(False, "--use-balanced-weights/--no-balanced-weights", 
+                                                  help="Use balanced class weights in loss function to handle class imbalance"),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -145,6 +155,7 @@ def main(
         "head_mlp_dims": mlp_dims,
         "head_dropout": head_dropout_val,
         "run_name": run_name,
+        "use_balanced_weights": use_balanced_weights,
     }
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
@@ -152,6 +163,88 @@ def main(
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)  # Allow mock data for testing
     dm = default_dm(hparams, data_dirs, img_size)
+
+    # Setup data module (required before accessing dataloaders)
+    dm.setup('fit')
+    
+    # ============================================================================
+    # COMPUTE CLASS WEIGHTS (if requested)
+    # ============================================================================
+    if use_balanced_weights:
+        print("\n" + "="*80)
+        print("COMPUTING BALANCED CLASS WEIGHTS")
+        print("="*80)
+        
+        # Compute class weights from training set
+        import numpy as np
+        train_loader = dm.train_dataloader()
+        all_labels = []
+        
+        print("Collecting labels from training set...")
+        for i, (x, y) in enumerate(train_loader):
+            all_labels.append(y.cpu().numpy())
+            if test_run and i >= 10:  # Limit for test runs
+                break
+        
+        all_labels = np.vstack(all_labels)
+        
+        # Compute class frequencies
+        class_counts = all_labels.sum(axis=0)  # Sum across samples for each class
+        total_samples = len(all_labels)
+        num_classes = len(class_counts)
+        
+        # Compute balanced weights: sqrt(n_samples / (n_classes * class_count))
+        # This gives higher weight to rare classes, but with reduced magnitude
+        # to prevent "False Positive Explosion"
+        weights = np.sqrt(total_samples / (num_classes * class_counts + 1e-6))
+        # Normalize so mean weight is 1.0
+        weights = weights / weights.mean()
+        
+        class_weights = torch.tensor(weights, dtype=torch.float32)
+        
+        print(f"Computed class weights (shape: {class_weights.shape})")
+        print(f"  Min weight: {class_weights.min():.4f}")
+        print(f"  Max weight: {class_weights.max():.4f}")
+        print(f"  Weight ratio (max/min): {class_weights.max() / class_weights.min():.2f}")
+        
+        # Update model's loss function with class weights
+        model.loss = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
+        print(f"Updated model loss function with balanced class weights")
+    
+    # Get run directory for metadata saving
+    run_dir = get_job_run_directory(run_name=hparams.get('run_name'))
+    
+    # ============================================================================
+    # SAVE TRAINING METADATA
+    # ============================================================================
+    # Build training command string for logging
+    training_cmd_parts = ["python", "scripts/train_BigEarthNetv2_0.py"]
+    training_cmd_parts.append(f"--architecture {architecture}")
+    training_cmd_parts.append(f"--seed {seed}")
+    training_cmd_parts.append(f"--lr {lr}")
+    training_cmd_parts.append(f"--epochs {epochs}")
+    training_cmd_parts.append(f"--bs {bs}")
+    training_cmd_parts.append(f"--bandconfig {bandconfig}")
+    if use_wandb:
+        training_cmd_parts.append("--use-wandb")
+    if test_run:
+        training_cmd_parts.append("--test-run")
+    if linear_probe:
+        training_cmd_parts.append("--linear-probe")
+    training_command = " ".join(training_cmd_parts)
+    
+    # Save comprehensive training metadata
+    saved_metadata = save_training_metadata(
+        run_dir=run_dir,
+        hparams=hparams,
+        model=model,
+        data_module=dm,
+        training_command=training_command,
+        config_path=Path(config_path) if config_path else None,
+    )
+    print(f"\n[Metadata] Saved training metadata to run directory:")
+    for metadata_type, path in saved_metadata.items():
+        print(f"  - {metadata_type}: {path}")
 
     # Handle checkpoint resume
     ckpt_path = None
@@ -176,8 +269,6 @@ def main(
 
     trainer.fit(model, dm, ckpt_path=ckpt_path)
     results = trainer.test(model, datamodule=dm, ckpt_path="best")
-    model_name = f"{architecture}-{bandconfig}-{version}"
-    model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)
     # Use run_name to prevent conflicts when running multiple trainings
     model_name = f"{architecture}-{bandconfig}-{run_name}-{version}"
     model.save_pretrained(f"hf_models/{model_name}", config=ilm_config)

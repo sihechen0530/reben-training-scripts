@@ -45,6 +45,8 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             head_type: str = "linear",
             mlp_hidden_dims: Optional[List[int]] = None,
             head_dropout: Optional[float] = None,
+            class_weights: Optional[torch.Tensor] = None,
+            threshold: float = 0.5,
             **kwargs,  # Accept extra kwargs for backward compatibility
     ):
         super().__init__()
@@ -140,7 +142,17 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             self.model = ConfigILM.ConfigILM(config)
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
-        self.loss = torch.nn.BCEWithLogitsLoss()
+        # Loss function with optional class weights for balanced loss
+        if class_weights is not None:
+            print(f"Using balanced loss with class weights (shape: {class_weights.shape})")
+            self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
+        else:
+            self.loss = torch.nn.BCEWithLogitsLoss()
+        
+        # Custom threshold for binary predictions (default 0.5)
+        self.threshold = threshold
+        if threshold != 0.5:
+            print(f"Using custom threshold: {threshold} (default is 0.5)")
         self.val_metrics_micro = get_classification_metric_collection(
             "multilabel", "micro", num_labels=config.classes, prefix="val/"
         )
@@ -301,31 +313,46 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         avg_loss = torch.stack([x["loss"] for x in self.val_output_list]).mean()
         self.log("val/loss", avg_loss)
 
-        preds = torch.cat([x["outputs"] for x in self.val_output_list])
+        logits = torch.cat([x["outputs"] for x in self.val_output_list])
         labels = torch.cat([x["labels"] for x in self.val_output_list]).long()
 
-        metrics_macro = self.val_metrics_macro(preds, labels)
+        # Apply custom threshold: convert logits to probabilities, then to binary predictions
+        # Convert binary predictions back to logits for metrics that expect logits
+        probs = torch.sigmoid(logits)
+        binary_preds = (probs > self.threshold).float()
+        # Convert binary predictions back to logits for metrics compatibility
+        thresholded_logits = torch.where(
+            binary_preds > 0.5,
+            torch.tensor(10.0, device=logits.device),  # Large positive logit
+            torch.tensor(-10.0, device=logits.device)  # Large negative logit
+        )
+
+        # Use thresholded logits for metrics that need binary predictions
+        metrics_macro = self.val_metrics_macro(thresholded_logits, labels)
         self.log_dict(metrics_macro)
         self.val_metrics_macro.reset()
 
-        metrics_micro = self.val_metrics_micro(preds, labels)
+        metrics_micro = self.val_metrics_micro(thresholded_logits, labels)
         self.log_dict(metrics_micro)
         self.val_metrics_micro.reset()
 
-        metrics_samples = self.val_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
+        metrics_samples = self.val_metrics_samples(thresholded_logits.unsqueeze(-1), labels.unsqueeze(-1))
         metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
         self.log_dict(metrics_samples)
         self.val_metrics_samples.reset()
 
         # get class names from datamodule
         class_names = NEW_LABELS
-        metrics_class = self.val_metrics_class(preds, labels)
+        metrics_class = self.val_metrics_class(thresholded_logits, labels)
         classwise_acc = {
             f"val/ClasswiseAccuracy/{class_names[i]}": metrics_class["val/MultilabelAccuracy_class"][i]
             for i in range(len(class_names))
         }
         self.log_dict(classwise_acc)
         self.val_metrics_class.reset()
+        
+        # Log threshold used
+        self.log("val/threshold", self.threshold)
 
     def test_step(self, batch, batch_idx):
         x, y = batch
@@ -337,30 +364,45 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         avg_loss = torch.stack([x["loss"] for x in self.test_output_list]).mean()
         self.log("test/loss", avg_loss)
 
-        preds = torch.cat([x["outputs"] for x in self.test_output_list])
+        logits = torch.cat([x["outputs"] for x in self.test_output_list])
         labels = torch.cat([x["labels"] for x in self.test_output_list]).long()
 
-        metrics_macro = self.test_metrics_macro(preds, labels)
+        # Apply custom threshold: convert logits to probabilities, then to binary predictions
+        # Convert binary predictions back to logits for metrics that expect logits
+        probs = torch.sigmoid(logits)
+        binary_preds = (probs > self.threshold).float()
+        # Convert binary predictions back to logits for metrics compatibility
+        thresholded_logits = torch.where(
+            binary_preds > 0.5,
+            torch.tensor(10.0, device=logits.device),  # Large positive logit
+            torch.tensor(-10.0, device=logits.device)  # Large negative logit
+        )
+
+        # Use thresholded logits for metrics that need binary predictions
+        metrics_macro = self.test_metrics_macro(thresholded_logits, labels)
         self.log_dict(metrics_macro)
         self.test_metrics_macro.reset()
 
-        metrics_micro = self.test_metrics_micro(preds, labels)
+        metrics_micro = self.test_metrics_micro(thresholded_logits, labels)
         self.log_dict(metrics_micro)
         self.test_metrics_micro.reset()
 
-        metrics_samples = self.test_metrics_samples(preds.unsqueeze(-1), labels.unsqueeze(-1))
+        metrics_samples = self.test_metrics_samples(thresholded_logits.unsqueeze(-1), labels.unsqueeze(-1))
         metrics_samples = {k: v.mean() for k, v in metrics_samples.items()}
         self.log_dict(metrics_samples)
         self.test_metrics_samples.reset()
 
         class_names = NEW_LABELS
-        metrics_class = self.test_metrics_class(preds, labels)
+        metrics_class = self.test_metrics_class(thresholded_logits, labels)
         classwise_acc = {
             f"test/ClasswiseAccuracy/{class_names[i]}": metrics_class["test/MultilabelAccuracy_class"][i]
             for i in range(len(class_names))
         }
         self.log_dict(classwise_acc)
         self.test_metrics_class.reset()
+        
+        # Log threshold used
+        self.log("test/threshold", self.threshold)
 
     def forward(self, batch):
         # because we are a wrapper, we call the inner function manually

@@ -1,9 +1,13 @@
 import os
 import socket
 import shutil
+import subprocess
+import platform
+import sys
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Mapping, Optional, Union
+from typing import List, Mapping, Optional, Union, Dict, Any
 
 import lightning.pytorch as pl
 import torch
@@ -463,11 +467,22 @@ def default_trainer(
         monitor="val/MultilabelAveragePrecision_macro",
         dirpath=str(dirpath.resolve()),
         filename=f"{hparams['architecture']}-{hparams['seed']}-{hparams['channels']}-{run_name}-val_mAP_macro-" + "{val/MultilabelAveragePrecision_macro:.2f}",
-        save_top_k=1,
+        save_top_k=1,  # Keep only the best checkpoint (old ones are automatically deleted when a better one is saved)
+        save_last=True,  # Always save the last checkpoint as a fallback (saved as 'last.ckpt')
         mode="max",
         auto_insert_metric_name=False,
         enable_version_counter=False,  # remove version counter from filename (v1, v2, ...)
+        verbose=True,  # Print when checkpoints are saved/deleted
     )
+    
+    # Print checkpoint directory and behavior for user reference
+    print(f"\n[Checkpoint Configuration]")
+    print(f"  Directory: {dirpath.resolve()}")
+    print(f"  Best checkpoint pattern: {checkpoint_callback.filename}")
+    print(f"  Last checkpoint: last.ckpt (always saved)")
+    print(f"  ⚠️  IMPORTANT: With save_top_k=1, old best checkpoints are automatically DELETED")
+    print(f"     when a better one is saved. The filename includes the metric value, so it")
+    print(f"     changes as the metric improves (e.g., ...-0.76.ckpt → ...-0.77.ckpt)\n")
     early_stopping_callback = pl.callbacks.EarlyStopping(
         monitor="val/MultilabelAveragePrecision_macro",
         patience=5,
@@ -532,3 +547,375 @@ def default_dm(
     )
     dm.train_transform = train_transforms
     return dm
+
+
+def get_git_info() -> Dict[str, Optional[str]]:
+    """Get git commit hash and branch information."""
+    git_info = {
+        'commit_hash': None,
+        'branch': None,
+        'is_dirty': None,
+    }
+    
+    try:
+        # Get commit hash
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            git_info['commit_hash'] = result.stdout.strip()
+        
+        # Get branch name
+        result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            git_info['branch'] = result.stdout.strip()
+        
+        # Check if working directory is dirty
+        result = subprocess.run(
+            ['git', 'diff', '--quiet'],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            timeout=5,
+        )
+        git_info['is_dirty'] = result.returncode != 0
+        
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        # Git not available or not a git repository
+        pass
+    
+    return git_info
+
+
+def get_system_info() -> Dict[str, Any]:
+    """Get system information (GPU, CUDA, Python version, etc.)."""
+    system_info = {
+        'hostname': socket.gethostname(),
+        'platform': platform.platform(),
+        'python_version': sys.version,
+        'python_executable': sys.executable,
+        'cuda_available': torch.cuda.is_available(),
+        'cuda_version': None,
+        'gpu_count': 0,
+        'gpu_info': [],
+    }
+    
+    if torch.cuda.is_available():
+        system_info['cuda_version'] = torch.version.cuda
+        system_info['gpu_count'] = torch.cuda.device_count()
+        
+        for i in range(torch.cuda.device_count()):
+            gpu_info = {
+                'device_id': i,
+                'name': torch.cuda.get_device_name(i),
+                'memory_total_gb': torch.cuda.get_device_properties(i).total_memory / (1024**3),
+            }
+            system_info['gpu_info'].append(gpu_info)
+    
+    return system_info
+
+
+def get_environment_info() -> Dict[str, str]:
+    """Get installed package versions."""
+    env_info = {}
+    
+    packages_to_check = [
+        'torch',
+        'lightning',
+        'pytorch_lightning',
+        'torchvision',
+        'numpy',
+        'pandas',
+        'configilm',
+    ]
+    
+    for package in packages_to_check:
+        try:
+            if package == 'lightning' or package == 'pytorch_lightning':
+                import lightning.pytorch as pl
+                env_info[package] = pl.__version__
+            elif package == 'torch':
+                env_info[package] = torch.__version__
+            elif package == 'torchvision':
+                import torchvision
+                env_info[package] = torchvision.__version__
+            elif package == 'numpy':
+                import numpy
+                env_info[package] = numpy.__version__
+            elif package == 'pandas':
+                import pandas
+                env_info[package] = pandas.__version__
+            elif package == 'configilm':
+                try:
+                    import configilm
+                    env_info[package] = getattr(configilm, '__version__', 'unknown')
+                except:
+                    env_info[package] = 'installed'
+        except ImportError:
+            env_info[package] = 'not_installed'
+    
+    return env_info
+
+
+def get_model_summary(model: Union[pl.LightningModule, torch.nn.Module]) -> Dict[str, Any]:
+    """Get model architecture summary."""
+    summary = {
+        'total_parameters': 0,
+        'trainable_parameters': 0,
+        'model_size_mb': 0,
+    }
+    
+    try:
+        # Count parameters
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+        summary['total_parameters'] = total_params
+        summary['trainable_parameters'] = trainable_params
+        
+        # Estimate model size (rough approximation)
+        # Assuming float32 (4 bytes per parameter)
+        model_size_bytes = total_params * 4
+        summary['model_size_mb'] = model_size_bytes / (1024 ** 2)
+        
+        # Get model structure info
+        if hasattr(model, 'model'):
+            # For BigEarthNetv2_0_ImageClassifier
+            summary['model_type'] = type(model.model).__name__
+        elif hasattr(model, 'dinov3_backbone'):
+            # For MultiModalLightningModule
+            summary['model_type'] = 'MultiModalModel'
+        else:
+            summary['model_type'] = type(model).__name__
+            
+    except Exception as e:
+        summary['error'] = str(e)
+    
+    return summary
+
+
+def get_data_statistics(data_module: BENv2DataModule) -> Dict[str, Any]:
+    """Get dataset statistics."""
+    stats = {
+        'train_size': None,
+        'val_size': None,
+        'test_size': None,
+        'num_classes': 19,
+        'image_size': None,
+        'channels': None,
+    }
+    
+    try:
+        if hasattr(data_module, 'train_dataset') and data_module.train_dataset is not None:
+            stats['train_size'] = len(data_module.train_dataset)
+        if hasattr(data_module, 'val_dataset') and data_module.val_dataset is not None:
+            stats['val_size'] = len(data_module.val_dataset)
+        if hasattr(data_module, 'test_dataset') and data_module.test_dataset is not None:
+            stats['test_size'] = len(data_module.test_dataset)
+        
+        # Get image dimensions from transform or dataset
+        if hasattr(data_module, 'img_size'):
+            stats['image_size'] = data_module.img_size
+        elif hasattr(data_module, 'train_dataset') and hasattr(data_module.train_dataset, 'img_size'):
+            stats['image_size'] = data_module.train_dataset.img_size
+        
+        # Get channels from transform or dataset
+        if hasattr(data_module, 'train_transform'):
+            # Try to infer from Normalize transform
+            norm_transforms = [t for t in data_module.train_transform.transforms if isinstance(t, transforms.Normalize)]
+            if norm_transforms:
+                stats['channels'] = len(norm_transforms[0].mean)
+    except Exception as e:
+        stats['error'] = str(e)
+    
+    return stats
+
+
+def save_training_metadata(
+    run_dir: Path,
+    hparams: Dict[str, Any],
+    model: Optional[Union[pl.LightningModule, torch.nn.Module]] = None,
+    data_module: Optional[BENv2DataModule] = None,
+    training_command: Optional[str] = None,
+    config_path: Optional[Path] = None,
+) -> Dict[str, Path]:
+    """
+    Save comprehensive training metadata to run directory.
+    
+    Args:
+        run_dir: Directory to save metadata
+        hparams: Hyperparameters dictionary
+        model: Optional model instance for architecture summary
+        data_module: Optional data module for dataset statistics
+        training_command: Optional training command/arguments
+        config_path: Optional path to config file (will be copied if not already copied)
+    
+    Returns:
+        Dictionary mapping metadata type to saved file path
+    """
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_files = {}
+    timestamp = datetime.now().isoformat()
+    
+    # 1. Save hyperparameters
+    hparams_path = run_dir / "hyperparameters.json"
+    with open(hparams_path, 'w') as f:
+        json.dump(hparams, f, indent=2, default=str)
+    saved_files['hyperparameters'] = hparams_path
+    
+    # 2. Save git information
+    git_info = get_git_info()
+    git_path = run_dir / "git_info.json"
+    with open(git_path, 'w') as f:
+        json.dump(git_info, f, indent=2)
+    saved_files['git_info'] = git_path
+    
+    # 3. Save system information
+    system_info = get_system_info()
+    system_path = run_dir / "system_info.json"
+    with open(system_path, 'w') as f:
+        json.dump(system_info, f, indent=2, default=str)
+    saved_files['system_info'] = system_path
+    
+    # 4. Save environment information
+    env_info = get_environment_info()
+    env_path = run_dir / "environment.json"
+    with open(env_path, 'w') as f:
+        json.dump(env_info, f, indent=2)
+    saved_files['environment'] = env_path
+    
+    # 5. Save model summary if model provided
+    if model is not None:
+        model_summary = get_model_summary(model)
+        model_path = run_dir / "model_summary.json"
+        with open(model_path, 'w') as f:
+            json.dump(model_summary, f, indent=2, default=str)
+        saved_files['model_summary'] = model_path
+    
+    # 6. Save data statistics if data module provided
+    if data_module is not None:
+        data_stats = get_data_statistics(data_module)
+        data_path = run_dir / "data_statistics.json"
+        with open(data_path, 'w') as f:
+            json.dump(data_stats, f, indent=2, default=str)
+        saved_files['data_statistics'] = data_path
+    
+    # 7. Save training command
+    if training_command:
+        cmd_path = run_dir / "training_command.txt"
+        with open(cmd_path, 'w') as f:
+            f.write(f"Training started at: {timestamp}\n")
+            f.write(f"Command: {training_command}\n")
+        saved_files['training_command'] = cmd_path
+    
+    # 8. Create comprehensive metadata summary
+    metadata_summary = {
+        'timestamp': timestamp,
+        'run_name': hparams.get('run_name', 'unknown'),
+        'architecture': hparams.get('architecture', 'unknown'),
+        'git': git_info,
+        'system': system_info,
+        'environment': env_info,
+        'hyperparameters': hparams,
+    }
+    
+    if model is not None:
+        metadata_summary['model'] = get_model_summary(model)
+    
+    if data_module is not None:
+        metadata_summary['data'] = get_data_statistics(data_module)
+    
+    summary_path = run_dir / "training_metadata.json"
+    with open(summary_path, 'w') as f:
+        json.dump(metadata_summary, f, indent=2, default=str)
+    saved_files['metadata_summary'] = summary_path
+    
+    # 9. Save human-readable report
+    report_path = run_dir / "training_metadata.txt"
+    with open(report_path, 'w') as f:
+        f.write("="*80 + "\n")
+        f.write("TRAINING METADATA REPORT\n")
+        f.write("="*80 + "\n\n")
+        f.write(f"Timestamp: {timestamp}\n")
+        f.write(f"Run Name: {hparams.get('run_name', 'unknown')}\n")
+        f.write(f"Architecture: {hparams.get('architecture', 'unknown')}\n\n")
+        
+        f.write("="*80 + "\n")
+        f.write("GIT INFORMATION\n")
+        f.write("="*80 + "\n")
+        f.write(f"Commit Hash: {git_info.get('commit_hash', 'N/A')}\n")
+        f.write(f"Branch: {git_info.get('branch', 'N/A')}\n")
+        f.write(f"Dirty Working Directory: {git_info.get('is_dirty', 'N/A')}\n\n")
+        
+        f.write("="*80 + "\n")
+        f.write("SYSTEM INFORMATION\n")
+        f.write("="*80 + "\n")
+        f.write(f"Hostname: {system_info.get('hostname', 'N/A')}\n")
+        f.write(f"Platform: {system_info.get('platform', 'N/A')}\n")
+        f.write(f"Python Version: {system_info.get('python_version', 'N/A')}\n")
+        f.write(f"CUDA Available: {system_info.get('cuda_available', False)}\n")
+        if system_info.get('cuda_version'):
+            f.write(f"CUDA Version: {system_info.get('cuda_version')}\n")
+        f.write(f"GPU Count: {system_info.get('gpu_count', 0)}\n")
+        for gpu in system_info.get('gpu_info', []):
+            f.write(f"  GPU {gpu['device_id']}: {gpu['name']} ({gpu['memory_total_gb']:.2f} GB)\n")
+        f.write("\n")
+        
+        f.write("="*80 + "\n")
+        f.write("ENVIRONMENT\n")
+        f.write("="*80 + "\n")
+        for package, version in env_info.items():
+            f.write(f"{package}: {version}\n")
+        f.write("\n")
+        
+        f.write("="*80 + "\n")
+        f.write("HYPERPARAMETERS\n")
+        f.write("="*80 + "\n")
+        for key, value in hparams.items():
+            f.write(f"{key}: {value}\n")
+        f.write("\n")
+        
+        if model is not None:
+            model_summary = get_model_summary(model)
+            f.write("="*80 + "\n")
+            f.write("MODEL SUMMARY\n")
+            f.write("="*80 + "\n")
+            f.write(f"Model Type: {model_summary.get('model_type', 'N/A')}\n")
+            f.write(f"Total Parameters: {model_summary.get('total_parameters', 0):,}\n")
+            f.write(f"Trainable Parameters: {model_summary.get('trainable_parameters', 0):,}\n")
+            f.write(f"Model Size (MB): {model_summary.get('model_size_mb', 0):.2f}\n")
+            f.write("\n")
+        
+        if data_module is not None:
+            data_stats = get_data_statistics(data_module)
+            f.write("="*80 + "\n")
+            f.write("DATA STATISTICS\n")
+            f.write("="*80 + "\n")
+            f.write(f"Train Size: {data_stats.get('train_size', 'N/A')}\n")
+            f.write(f"Val Size: {data_stats.get('val_size', 'N/A')}\n")
+            f.write(f"Test Size: {data_stats.get('test_size', 'N/A')}\n")
+            f.write(f"Image Size: {data_stats.get('image_size', 'N/A')}\n")
+            f.write(f"Channels: {data_stats.get('channels', 'N/A')}\n")
+            f.write(f"Number of Classes: {data_stats.get('num_classes', 'N/A')}\n")
+            f.write("\n")
+        
+        if training_command:
+            f.write("="*80 + "\n")
+            f.write("TRAINING COMMAND\n")
+            f.write("="*80 + "\n")
+            f.write(f"{training_command}\n")
+    
+    saved_files['metadata_report'] = report_path
+    
+    return saved_files

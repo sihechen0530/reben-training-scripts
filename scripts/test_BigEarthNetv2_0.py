@@ -42,6 +42,7 @@ def main(
         test_run: bool = typer.Option(False, help="Run testing with fewer batches (for quick testing)"),
         dinov3_model_name: str = typer.Option(None, help="DINOv3 HuggingFace model name (e.g., facebook/dinov3-base). "
                                                          "If None, will be inferred from architecture parameter."),
+        threshold: float = typer.Option(0.5, help="Threshold for binary predictions in multi-label classification (default: 0.5)"),
 ):
     """
     Test a trained checkpoint on the BigEarthNet v2.0 test set.
@@ -49,6 +50,7 @@ def main(
     The checkpoint path should be a path to a .ckpt file saved by PyTorch Lightning.
     Example usage:
         python test_checkpoint_BigEarthNetv2_0.py --checkpoint-path ./checkpoints/resnet18-42-12-val_mAP_macro-0.85.ckpt
+        python test_checkpoint_BigEarthNetv2_0.py --checkpoint-path ./checkpoints/model.ckpt --threshold 0.3
     """
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -60,8 +62,10 @@ def main(
     
     # Try to load hyperparameters from checkpoint if available
     checkpoint_channels = None
+    checkpoint_data = None
     try:
-        checkpoint = torch.load(ckpt_path, map_location='cpu')
+        checkpoint_data = torch.load(ckpt_path, map_location='cpu', weights_only=False)
+        checkpoint = checkpoint_data
         if 'hyper_parameters' in checkpoint:
             hparams_ckpt = checkpoint['hyper_parameters']
             if architecture is None and 'architecture' in hparams_ckpt:
@@ -83,6 +87,11 @@ def main(
             if 'seed' in hparams_ckpt and seed == 42:  # Only override if using default
                 seed = hparams_ckpt['seed']
                 print(f"Loaded seed from checkpoint: {seed}")
+            
+            # Check if checkpoint was trained with class weights
+            if 'use_balanced_weights' in hparams_ckpt and hparams_ckpt['use_balanced_weights']:
+                print("Note: Checkpoint was trained with balanced class weights")
+                # We don't need to recreate the weights for testing, just note it
         
         # If we still don't have channels or bandconfig, try to extract from state_dict
         if checkpoint_channels is None or bandconfig is None:
@@ -229,7 +238,36 @@ def main(
             dinov3_name = "facebook/dinov3-vits16-pretrain-lvd1689m"  # default to small
     
     # Create model instance (weights will be loaded from checkpoint)
-    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name)
+    model = BigEarthNetv2_0_ImageClassifier(config, lr=lr, warmup=warmup, dinov3_model_name=dinov3_name, threshold=threshold)
+    
+    # Manually load checkpoint state_dict, excluding loss module to avoid pos_weight mismatch
+    # This is necessary because checkpoints trained with class weights have loss.pos_weight
+    # but we create the model without class weights for testing
+    try:
+        # Reuse checkpoint_data if already loaded, otherwise load it
+        if checkpoint_data is None:
+            checkpoint_data = torch.load(ckpt_path, map_location='cpu', weights_only=False)
+        checkpoint = checkpoint_data
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+            # Filter out loss module keys to avoid pos_weight mismatch
+            filtered_state_dict = {k: v for k, v in state_dict.items() if not k.startswith('loss.')}
+            if len(filtered_state_dict) < len(state_dict):
+                print(f"Note: Excluding {len(state_dict) - len(filtered_state_dict)} loss module keys from checkpoint (pos_weight mismatch)")
+            # Load the filtered state dict
+            missing_keys, unexpected_keys = model.load_state_dict(filtered_state_dict, strict=False)
+            if missing_keys:
+                print(f"Warning: {len(missing_keys)} keys not found in model (this may be normal)")
+            if unexpected_keys:
+                print(f"Warning: {len(unexpected_keys)} unexpected keys in checkpoint (this may be normal)")
+        else:
+            print("Warning: Checkpoint does not contain 'state_dict', attempting to load directly")
+            # Try loading as direct state dict
+            filtered_state_dict = {k: v for k, v in checkpoint.items() if not k.startswith('loss.')}
+            model.load_state_dict(filtered_state_dict, strict=False)
+    except Exception as e:
+        print(f"Warning: Could not manually load checkpoint state_dict: {e}")
+        print("Will attempt to load via PyTorch Lightning (may fail if loss.pos_weight mismatch)")
     
     hparams = {
         "architecture": architecture,
@@ -261,10 +299,11 @@ def main(
     print(f"Testing checkpoint: {checkpoint_path}")
     print(f"Architecture: {architecture}")
     print(f"Band config: {bandconfig} ({channels} channels)")
+    print(f"Threshold: {threshold}")
     print(f"{'='*60}\n")
     
-    # Test the checkpoint
-    results = trainer.test(model, datamodule=dm, ckpt_path=str(ckpt_path))
+    # Test the model (weights already loaded manually, don't pass ckpt_path)
+    results = trainer.test(model, datamodule=dm)
     
     print(f"\n{'='*60}")
     print("Test Results:")

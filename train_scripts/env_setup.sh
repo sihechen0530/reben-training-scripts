@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # ===== Explorer modules =====
+newgrp gophers
+
 module load cuda/12.1.1
 module load anaconda3/2024.06
 
