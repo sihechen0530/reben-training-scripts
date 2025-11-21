@@ -670,9 +670,10 @@ def main(
         print(f"  Max weight: {class_weights.max():.4f}")
         print(f"  Weight ratio (max/min): {class_weights.max() / class_weights.min():.2f}")
         
-        # Update model's loss function with class weights
-        model.loss = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
-        print(f"Updated model loss function with balanced class weights")
+        # Note: AsymmetricLoss doesn't support pos_weight, so class_weights are ignored
+        # The loss handles class imbalance through asymmetric focusing instead
+        print(f"Note: class_weights computed but AsymmetricLoss doesn't use pos_weight.")
+        print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=4, gamma_pos=1).")
     
     # ============================================================================
     # SAVE TRAINING METADATA

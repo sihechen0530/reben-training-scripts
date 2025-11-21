@@ -12,6 +12,7 @@ from configilm.metrics import get_classification_metric_collection
 from configilm.extra.BENv2_utils import NEW_LABELS
 
 from multimodal.model import MultiModalModel
+from reben_publication.losses import AsymmetricLoss
 
 
 class MultiModalLightningModule(pl.LightningModule):
@@ -102,12 +103,13 @@ class MultiModalLightningModule(pl.LightningModule):
                 freeze=freeze_resnet,
             )
         
-        # Loss function with optional class weights for balanced loss
+        # Loss function: AsymmetricLoss (replaces BCEWithLogitsLoss)
+        # Note: AsymmetricLoss doesn't support pos_weight, so class_weights are ignored
+        # The loss handles class imbalance through asymmetric focusing instead
         if class_weights is not None:
-            print(f"Using balanced loss with class weights (shape: {class_weights.shape})")
-            self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights)
-        else:
-            self.loss = torch.nn.BCEWithLogitsLoss()
+            print(f"Note: class_weights provided but AsymmetricLoss doesn't use pos_weight.")
+            print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=4, gamma_pos=1).")
+        self.loss = AsymmetricLoss(gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8)
         
         # Metrics
         num_classes = config.get("classifier", {}).get("num_classes", 19) if config else 19
