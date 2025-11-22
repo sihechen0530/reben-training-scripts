@@ -151,7 +151,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         if class_weights is not None:
             print(f"Note: class_weights provided but AsymmetricLoss doesn't use pos_weight.")
             print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=4, gamma_pos=1).")
-        self.loss = AsymmetricLoss(gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8)
+        self.loss = AsymmetricLoss(gamma_neg=2, gamma_pos=2, clip=0.05, eps=1e-8)
         
         # Custom threshold for binary predictions (default 0.5)
         self.threshold = threshold
