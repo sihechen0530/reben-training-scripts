@@ -55,6 +55,9 @@ def main(
         run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
         devices: int = typer.Option(None, help="Number of GPUs to use (None = auto-detect)"),
         strategy: str = typer.Option(None, help="Training strategy (None = auto, 'ddp', 'ddp_spawn', etc.)"),
+        decoupling_epochs: int = typer.Option(None, help="Number of epochs for Phase 1 (BCE loss, full training). "
+                                                         "After this, Phase 2 begins (ASL loss, frozen backbone, head-only). "
+                                                         "If None, standard BCE training is used."),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -119,6 +122,7 @@ def main(
         head_type=head_type,
         mlp_hidden_dims=mlp_dims,
         head_dropout=head_dropout_val,
+        decoupling_epochs=decoupling_epochs,
     )
 
     # Generate unique run name if not provided
@@ -145,6 +149,7 @@ def main(
         "head_mlp_dims": mlp_dims,
         "head_dropout": head_dropout_val,
         "run_name": run_name,
+        "decoupling_epochs": decoupling_epochs,
     }
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
