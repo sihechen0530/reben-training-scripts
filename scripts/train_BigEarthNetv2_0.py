@@ -65,6 +65,9 @@ def main(
         strategy: str = typer.Option(None, help="Training strategy for multi-GPU"),
         use_balanced_weights: bool = typer.Option(False, "--use-balanced-weights/--no-balanced-weights", 
                                                   help="Use balanced class weights in loss function to handle class imbalance"),
+        decoupling_epochs: int = typer.Option(None, help="Number of epochs for Phase 1 (BCE loss, full training). "
+                                                         "After this, Phase 2 begins (ASL loss, frozen backbone, head-only). "
+                                                         "If None, standard ASL training is used."),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -129,6 +132,7 @@ def main(
         head_type=head_type,
         mlp_hidden_dims=mlp_dims,
         head_dropout=head_dropout_val,
+        decoupling_epochs=decoupling_epochs,
     )
 
     # Generate unique run name if not provided
@@ -156,6 +160,7 @@ def main(
         "head_dropout": head_dropout_val,
         "run_name": run_name,
         "use_balanced_weights": use_balanced_weights,
+        "decoupling_epochs": decoupling_epochs,
     }
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
@@ -210,7 +215,7 @@ def main(
         # Note: AsymmetricLoss doesn't support pos_weight, so class_weights are ignored
         # The loss handles class imbalance through asymmetric focusing instead
         print(f"Note: class_weights computed but AsymmetricLoss doesn't use pos_weight.")
-        print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=4, gamma_pos=1).")
+        print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=2, gamma_pos=2).")
     
     # Get run directory for metadata saving
     run_dir = get_job_run_directory(run_name=hparams.get('run_name'))

@@ -673,7 +673,7 @@ def main(
         # Note: AsymmetricLoss doesn't support pos_weight, so class_weights are ignored
         # The loss handles class imbalance through asymmetric focusing instead
         print(f"Note: class_weights computed but AsymmetricLoss doesn't use pos_weight.")
-        print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=4, gamma_pos=1).")
+        print(f"  Class imbalance is handled through asymmetric focusing (gamma_neg=2, gamma_pos=2).")
     
     # ============================================================================
     # SAVE TRAINING METADATA
