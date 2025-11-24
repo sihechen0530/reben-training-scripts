@@ -124,6 +124,116 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 
+def targeted_copypaste(image, label, rare_indices, dataset, prob=0.5, min_cut_ratio=0.25, max_cut_ratio=0.5):
+    """
+    Apply Targeted Copy-Paste augmentation: paste a chunk from a rare class image onto the current image.
+    
+    This is class-aware copy-paste designed for long-tail learning:
+    - Background: Current image (likely common class)
+    - Foreground: Randomly sampled rare class image
+    - Action: Crop a random chunk from rare image and paste onto background
+    - Label: Union of both labels (multi-label)
+    
+    Args:
+        image: Current image tensor (C, H, W) - background
+        label: Current label tensor (num_classes,) - background labels
+        rare_indices: List of dataset indices containing rare classes
+        dataset: Reference to the training dataset to load rare images
+        prob: Probability of applying copy-paste (default: 0.5)
+        min_cut_ratio: Minimum size of cut as ratio of image (default: 0.25)
+        max_cut_ratio: Maximum size of cut as ratio of image (default: 0.5)
+    
+    Returns:
+        augmented_image: Image with rare class chunk pasted
+        new_label: Union of background and foreground labels
+    """
+    import random
+    
+    # Flip a coin to decide if we apply Copy-Paste
+    if random.random() > prob or len(rare_indices) == 0:
+        return image, label
+    
+    # Pick a random rare image as the source
+    rare_idx = random.choice(rare_indices)
+    
+    try:
+        # Handle datasets that return (image, label) or (image, label, patch_id)
+        dataset_item = dataset[rare_idx]
+        if len(dataset_item) == 2:
+            src_image, src_label = dataset_item
+        elif len(dataset_item) >= 2:
+            src_image, src_label = dataset_item[0], dataset_item[1]
+        else:
+            return image, label
+        
+        # Ensure tensors
+        if not isinstance(src_image, torch.Tensor):
+            src_image = torch.tensor(src_image, dtype=image.dtype)
+        if not isinstance(src_label, torch.Tensor):
+            src_label = torch.tensor(src_label, dtype=label.dtype)
+        
+        # Ensure same device
+        if src_image.device != image.device:
+            src_image = src_image.to(image.device)
+        if src_label.device != label.device:
+            src_label = src_label.to(label.device)
+        
+        # Get image dimensions
+        _, h, w = image.shape
+        
+        # Create the cut (random box)
+        # Random size (25% to 50% of image)
+        cut_h = random.randint(int(h * min_cut_ratio), int(h * max_cut_ratio))
+        cut_w = random.randint(int(w * min_cut_ratio), int(w * max_cut_ratio))
+        
+        # Random position (ensure it fits)
+        y = random.randint(0, max(1, h - cut_h))
+        x = random.randint(0, max(1, w - cut_w))
+        
+        # Ensure cut dimensions don't exceed image bounds
+        cut_h = min(cut_h, h - y)
+        cut_w = min(cut_w, w - x)
+        
+        # Ensure source image has compatible dimensions
+        if src_image.shape[1] >= cut_h and src_image.shape[2] >= cut_w:
+            # Paste source onto background (simple replacement)
+            augmented_image = image.clone()
+            # Use corresponding region from source (can use same or random position)
+            src_y = random.randint(0, max(1, src_image.shape[1] - cut_h))
+            src_x = random.randint(0, max(1, src_image.shape[2] - cut_w))
+            src_cut_h = min(cut_h, src_image.shape[1] - src_y)
+            src_cut_w = min(cut_w, src_image.shape[2] - src_x)
+            
+            # Resize if needed to match cut dimensions
+            if src_cut_h != cut_h or src_cut_w != cut_w:
+                # Use interpolation to resize the source cut
+                src_cut = src_image[:, src_y:src_y+src_cut_h, src_x:src_x+src_cut_w]
+                src_cut = torch.nn.functional.interpolate(
+                    src_cut.unsqueeze(0),
+                    size=(cut_h, cut_w),
+                    mode='bilinear',
+                    align_corners=False
+                ).squeeze(0)
+            else:
+                src_cut = src_image[:, src_y:src_y+src_cut_h, src_x:src_x+src_cut_w]
+            
+            augmented_image[:, y:y+cut_h, x:x+cut_w] = src_cut
+            
+            # Mix the labels (multi-label union)
+            # Since we added the rare object, we add its label
+            new_label = torch.clamp(label + src_label, 0.0, 1.0)
+            
+            return augmented_image, new_label
+        else:
+            # Source image too small, return original
+            return image, label
+            
+    except Exception as e:
+        # If anything goes wrong, return original image
+        # This can happen if dataset access fails or indices are invalid
+        return image, label
+
+
 class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
     """
     Wrapper around a pytorch module, allowing this module to be used in automatic
@@ -166,9 +276,17 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         self.use_cutmix = use_cutmix
         self.cutmix_alpha = cutmix_alpha
         
-        # Store sampler and dataloader for later use
+        # Targeted Copy-Paste settings
+        self.use_targeted_copypaste = kwargs.get('use_targeted_copypaste', False)
+        self.copypaste_prob = kwargs.get('copypaste_prob', 0.5)
+        self.copypaste_min_ratio = kwargs.get('copypaste_min_ratio', 0.25)
+        self.copypaste_max_ratio = kwargs.get('copypaste_max_ratio', 0.5)
+        self.rare_class_threshold = kwargs.get('rare_class_threshold', 0.1)  # Classes with <10% frequency are rare
+        
+        # Store sampler, dataloader, and rare indices for later use
         self._train_sampler = None
         self._train_dataloader = None
+        self._rare_indices = None
         
         # DEBUG: Print classifier configuration
         print(f"\n{'='*60}")
@@ -180,6 +298,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         print(f"  use_weighted_sampler: {self.use_weighted_sampler}")
         print(f"  use_mixup: {self.use_mixup} (alpha={self.mixup_alpha})")
         print(f"  use_cutmix: {self.use_cutmix} (alpha={self.cutmix_alpha})")
+        print(f"  use_targeted_copypaste: {self.use_targeted_copypaste} (prob={self.copypaste_prob})")
         print(f"{'='*60}\n")
         
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
@@ -341,10 +460,126 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             print(f"    [{i}] {layer}")
         print()
 
+    def _compute_rare_indices(self):
+        """
+        Compute indices of samples containing rare classes.
+        Rare classes are defined as those with frequency below the threshold.
+        
+        Returns:
+            List of dataset indices that contain at least one rare class
+        """
+        if self._rare_indices is not None:
+            return self._rare_indices
+        
+        if not hasattr(self.trainer, 'datamodule') or not hasattr(self.trainer.datamodule, 'train_ds'):
+            return []
+        
+        train_ds = self.trainer.datamodule.train_ds
+        total_samples = len(train_ds)
+        
+        print(f"\n{'='*60}")
+        print("Computing rare class indices for Targeted Copy-Paste...")
+        print(f"{'='*60}")
+        
+        # First, compute class frequencies
+        class_counts = torch.zeros(self.config.classes)
+        sample_size = min(10000, total_samples)
+        indices = torch.randperm(total_samples)[:sample_size]
+        
+        for idx in indices:
+            try:
+                _, label = train_ds[int(idx)]
+                if isinstance(label, torch.Tensor):
+                    class_counts += label.float()
+                else:
+                    label_tensor = torch.tensor(label, dtype=torch.float32)
+                    class_counts += label_tensor
+            except Exception:
+                continue
+        
+        # Compute class frequencies
+        class_freqs = class_counts / (class_counts.sum() + 1e-8)
+        
+        # Identify rare classes (frequency below threshold)
+        rare_class_mask = class_freqs < self.rare_class_threshold
+        rare_class_indices = torch.where(rare_class_mask)[0].tolist()
+        
+        print(f"Class frequencies (from {sample_size} samples):")
+        for i, (name, freq) in enumerate(zip(NEW_LABELS, class_freqs)):
+            is_rare = i in rare_class_indices
+            marker = " [RARE]" if is_rare else ""
+            print(f"  {i:2d}. {name:30s}: freq={freq:.4f}{marker}")
+        print(f"\nFound {len(rare_class_indices)} rare classes out of {self.config.classes} total classes")
+        print(f"Rare class threshold: {self.rare_class_threshold}")
+        
+        # Now find all dataset indices that contain at least one rare class
+        rare_indices = []
+        print("Scanning dataset for samples with rare classes...")
+        
+        # Process in batches to avoid memory issues
+        batch_size_scan = 1000
+        for i in range(0, total_samples, batch_size_scan):
+            end_idx = min(i + batch_size_scan, total_samples)
+            
+            for idx in range(i, end_idx):
+                try:
+                    _, label = train_ds[idx]
+                    if isinstance(label, torch.Tensor):
+                        label_tensor = label.float()
+                    else:
+                        label_tensor = torch.tensor(label, dtype=torch.float32)
+                    
+                    # Check if this sample has any rare class
+                    has_rare = False
+                    for rare_class_idx in rare_class_indices:
+                        if label_tensor[rare_class_idx] > 0.5:
+                            has_rare = True
+                            break
+                    
+                    if has_rare:
+                        rare_indices.append(idx)
+                except Exception:
+                    continue
+        
+        print(f"Found {len(rare_indices)} samples containing rare classes out of {total_samples} total samples")
+        print(f"{'='*60}\n")
+        
+        self._rare_indices = rare_indices
+        return rare_indices
+    
     def training_step(self, batch, batch_idx):
         x, y = batch
         
+        # Apply Targeted Copy-Paste first (if enabled)
+        # This should happen before Mixup/CutMix to preserve rare class features
+        if self.use_targeted_copypaste and self.training:
+            # Compute rare indices if not already done
+            rare_indices = self._compute_rare_indices()
+            
+            if len(rare_indices) > 0:
+                train_ds = self.trainer.datamodule.train_ds
+                # Apply copy-paste to each sample in the batch
+                augmented_x = []
+                augmented_y = []
+                
+                for i in range(x.shape[0]):
+                    img, lbl = targeted_copypaste(
+                        x[i],
+                        y[i],
+                        rare_indices,
+                        train_ds,
+                        prob=self.copypaste_prob,
+                        min_cut_ratio=self.copypaste_min_ratio,
+                        max_cut_ratio=self.copypaste_max_ratio
+                    )
+                    augmented_x.append(img)
+                    augmented_y.append(lbl)
+                
+                x = torch.stack(augmented_x)
+                y = torch.stack(augmented_y)
+        
         # Apply Mixup or CutMix augmentation if enabled
+        # Note: Mixup/CutMix can be combined with Copy-Paste
         if self.use_mixup and self.training:
             mixed_x, y_a, y_b, lam = mixup_data(x, y, alpha=self.mixup_alpha)
             x_hat = self.model(mixed_x)
