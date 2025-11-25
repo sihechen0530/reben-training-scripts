@@ -50,6 +50,12 @@ def main(
         head_dropout: float = typer.Option(None, help="Dropout rate for classification head. If None, uses drop_rate"),
         resume_from: str = typer.Option(None, help="Path to checkpoint file to resume training from. "
                                                    "Can be a full path or 'best'/'last' to use the best/last checkpoint from the checkpoint directory."),
+        backbone_pretrained_ckpt: str = typer.Option(
+            None,
+            help="Optional weights-only checkpoint to initialize the backbone "
+                 "(e.g., output of prepare_bigearthnet_classifier_ckpt.py). "
+                 "Do not combine with --resume-from.",
+        ),
         config_path: str = typer.Option(None, help="Path to config YAML file for data directory configuration. "
                           "If not provided, will use hostname-based directory selection."),
         run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
@@ -120,6 +126,22 @@ def main(
         mlp_hidden_dims=mlp_dims,
         head_dropout=head_dropout_val,
     )
+
+    if backbone_pretrained_ckpt is not None:
+        if resume_from is not None:
+            raise ValueError("Please use either --resume-from (full Lightning checkpoint) "
+                             "or --backbone-pretrained-ckpt (weights only), not both.")
+        ckpt_path = Path(backbone_pretrained_ckpt)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Backbone checkpoint not found: {ckpt_path}")
+        ckpt_data = torch.load(ckpt_path, map_location="cpu")
+        state_dict = ckpt_data.get("state_dict", ckpt_data)
+        load_result = model.load_state_dict(state_dict, strict=False)
+        print(f"Loaded backbone weights from {ckpt_path}")
+        if load_result.missing_keys:
+            print(f"  Missing keys: {load_result.missing_keys}")
+        if load_result.unexpected_keys:
+            print(f"  Unexpected keys: {load_result.unexpected_keys}")
 
     # Generate unique run name if not provided
     if run_name is None:
