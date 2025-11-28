@@ -45,6 +45,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             head_type: str = "linear",
             mlp_hidden_dims: Optional[List[int]] = None,
             head_dropout: Optional[float] = None,
+            pos_weight: Optional[torch.Tensor] = None,
             **kwargs,  # Accept extra kwargs for backward compatibility
     ):
         super().__init__()
@@ -140,7 +141,15 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             self.model = ConfigILM.ConfigILM(config)
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
-        self.loss = torch.nn.BCEWithLogitsLoss()
+        # Use weighted loss if pos_weight is provided
+        if pos_weight is not None:
+            if isinstance(pos_weight, (list, tuple)):
+                pos_weight = torch.tensor(pos_weight, dtype=torch.float32)
+            elif not isinstance(pos_weight, torch.Tensor):
+                raise TypeError(f"pos_weight must be a tensor, list, or tuple, got {type(pos_weight)}")
+            # Ensure pos_weight is on the correct device (will be moved to device automatically by PyTorch)
+            print(f"Using weighted loss with pos_weight: {pos_weight}")
+        self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         self.val_metrics_micro = get_classification_metric_collection(
             "multilabel", "micro", num_labels=config.classes, prefix="val/"
         )
