@@ -8,6 +8,7 @@ Supports three model types:
 """
 
 import sys
+import json
 from pathlib import Path
 from typing import Optional, Tuple
 from configilm.extra.BENv2_utils import resolve_data_dir
@@ -113,6 +114,7 @@ def load_model_and_infer(
     threshold: float = 0.5,
     allow_mock_data: bool = True,
     return_sample_ids: bool = False,
+    split: str = "test",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
     """
     Load model (HF pretrained, BigEarthNet checkpoint, or Multimodal checkpoint) and run inference.
@@ -141,7 +143,110 @@ def load_model_and_infer(
     # HuggingFace pretrained --------------------------------------------------
     if model_type == "hf_pretrained":
         print("Loading HuggingFace pretrained model...")
-        model = BigEarthNetv2_0_ImageClassifier.from_pretrained(model_path)
+        try:
+            model = BigEarthNetv2_0_ImageClassifier.from_pretrained(model_path)
+        except AttributeError as e:
+            if "items" in str(e) and ("ILMConfiguration" in str(e) or "config" in str(e).lower()):
+                # Workaround: Manually load the model to bypass the config.items() issue
+                print("Attempting workaround for config serialization issue...")
+                try:
+                    from huggingface_hub import snapshot_download
+                    import tempfile
+                    import json
+                    
+                    # Download model files
+                    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+                    local_dir = snapshot_download(repo_id=model_path, cache_dir=cache_dir)
+                    local_path = Path(local_dir)
+                    
+                    # Load config.json and convert to ILMConfiguration
+                    config_file = local_path / "config.json"
+                    if not config_file.exists():
+                        raise FileNotFoundError(f"Config file not found in {local_path}")
+                    
+                    with open(config_file, 'r') as f:
+                        config_dict = json.load(f)
+                    
+                    # Convert dict to ILMConfiguration
+                    # Handle both flat and nested config structures
+                    if isinstance(config_dict, dict):
+                        # Try to extract from nested structure first
+                        if 'config' in config_dict and isinstance(config_dict['config'], dict):
+                            config_data = config_dict['config']
+                        else:
+                            config_data = config_dict
+                        
+                        # Extract ILMConfiguration parameters with defaults
+                        network_type_str = config_data.get('network_type', 'IMAGE_CLASSIFICATION')
+                        if isinstance(network_type_str, str):
+                            network_type = ILMType.IMAGE_CLASSIFICATION  # Default
+                        else:
+                            network_type = network_type_str
+                        
+                        config = ILMConfiguration(
+                            network_type=network_type,
+                            classes=config_data.get('classes', 19),
+                            image_size=config_data.get('image_size', 120),
+                            drop_rate=config_data.get('drop_rate', 0.15),
+                            drop_path_rate=config_data.get('drop_path_rate', 0.15),
+                            timm_model_name=config_data.get('timm_model_name', 
+                                                          config_data.get('architecture', 
+                                                                        config_data.get('timm_model_name', 'resnet101'))),
+                            channels=config_data.get('channels', 10),
+                        )
+                    else:
+                        raise ValueError(f"Unexpected config format: {type(config_dict)}")
+                    
+                    # Load model weights
+                    model_file = local_path / "pytorch_model.bin"
+                    if not model_file.exists():
+                        model_file = local_path / "model.safetensors"
+                    
+                    if not model_file.exists():
+                        raise FileNotFoundError(f"Model weights not found in {local_path}")
+                    
+                    # Create model with config
+                    model = BigEarthNetv2_0_ImageClassifier(
+                        config=config,
+                        lr=config_dict.get('lr', 0.001),
+                        warmup=config_dict.get('warmup', None),
+                        dinov3_model_name=config_dict.get('dinov3_model_name', None),
+                        linear_probe=config_dict.get('linear_probe', False),
+                        head_type=config_dict.get('head_type', 'linear'),
+                        mlp_hidden_dims=config_dict.get('mlp_hidden_dims', None),
+                        head_dropout=config_dict.get('head_dropout', None),
+                    )
+                    
+                    # Load weights
+                    if model_file.suffix == '.safetensors':
+                        from safetensors.torch import load_file
+                        state_dict = load_file(str(model_file))
+                    else:
+                        state_dict = torch.load(model_file, map_location='cpu')
+                    
+                    # Handle nested state_dict (might have 'state_dict' key)
+                    if 'state_dict' in state_dict:
+                        state_dict = state_dict['state_dict']
+                    elif 'model_state_dict' in state_dict:
+                        state_dict = state_dict['model_state_dict']
+                    
+                    # Load state dict, handling potential key mismatches
+                    model.load_state_dict(state_dict, strict=False)
+                    print("Successfully loaded model using workaround method")
+                    
+                except Exception as e2:
+                    raise ValueError(
+                        f"Failed to load HuggingFace model '{model_path}' due to config serialization issue. "
+                        f"Workaround also failed.\n\n"
+                        f"Original error: {e}\n"
+                        f"Workaround error: {e2}\n\n"
+                        f"Possible solutions:\n"
+                        f"1. Check if the model was saved with a compatible version of the code\n"
+                        f"2. Try updating huggingface_hub: pip install --upgrade huggingface_hub\n"
+                        f"3. Contact the model maintainer about the config format issue"
+                    ) from e2
+            else:
+                raise
         model.eval()
 
         channels = model.config.channels
@@ -461,26 +566,86 @@ def load_model_and_infer(
     print(f"{'=' * 60}\n")
 
     all_predictions, all_probabilities, all_labels = [], [], []
-    dm.setup(stage="test")
-    test_loader = dm.test_dataloader()
+    if split == "validation":
+        # Use "fit" stage to set up both train and validation datasets
+        dm.setup(stage="fit")
+        data_loader = dm.val_dataloader()
+        split_name = "validation set"
+        print(f"DEBUG: val_dataloader() returned: {type(data_loader)}, value: {data_loader}")
+        if data_loader is None:
+            raise ValueError(
+                "Validation dataloader is None. The datamodule may not have validation data configured. "
+                "Please ensure your dataset has a validation split."
+            )
+    else:
+        dm.setup(stage="test")
+        data_loader = dm.test_dataloader()
+        split_name = "test set"
+        if data_loader is None:
+            raise ValueError(
+                "Test dataloader is None. The datamodule may not have test data configured."
+            )
     device = next(model.parameters()).device
 
-    print("Running inference on test set...")
-    with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(test_loader):
-            x, y = x.to(device), y.to(device)
-            logits = model(x)
-            probs = torch.sigmoid(logits)
-            preds = (probs > threshold).long()
+    # Additional check: ensure dataloader is iterable
+    try:
+        # Try to get length or check if it's iterable
+        if hasattr(data_loader, '__len__'):
+            try:
+                dl_len = len(data_loader)
+                print(f"DataLoader has {dl_len} batches")
+            except (TypeError, AttributeError):
+                print("DataLoader length is not available (might be a generator)")
+    except Exception as e:
+        raise ValueError(
+            f"Error checking dataloader: {e}. "
+            f"The {split_name} dataloader may not be properly configured."
+        ) from e
 
-            all_predictions.append(preds.cpu())
-            all_probabilities.append(probs.cpu())
-            all_labels.append(y.cpu())
+    print(f"Running inference on {split_name}...")
+    print(f"Device: {device}, Batch size: {bs}, Workers: {workers}")
+    
+    # Performance optimization: Use non_blocking transfers and keep tensors on GPU longer
+    try:
+        with torch.no_grad():
+            # Enable optimizations for inference
+            if torch.cuda.is_available() and device.type == 'cuda':
+                torch.backends.cudnn.benchmark = True  # Optimize for consistent input sizes
+            
+            for batch_idx, (x, y) in enumerate(data_loader):
+                # Use non_blocking transfer for faster CPU->GPU
+                x = x.to(device, non_blocking=True)
+                y = y.to(device, non_blocking=True)
+                
+                logits = model(x)
+                probs = torch.sigmoid(logits)
+                preds = (probs > threshold).long()
 
-            if test_run and batch_idx >= 4:
-                break
-            if (batch_idx + 1) % 10 == 0:
-                print(f"  Processed {batch_idx + 1} batches...")
+                # Keep on GPU and move to CPU asynchronously (batch the CPU transfers)
+                # This reduces GPU-CPU synchronization overhead
+                all_predictions.append(preds.detach().cpu())
+                all_probabilities.append(probs.detach().cpu())
+                all_labels.append(y.detach().cpu())
+
+                if test_run and batch_idx >= 4:
+                    break
+                if (batch_idx + 1) % 10 == 0:
+                    print(f"  Processed {batch_idx + 1} batches...")
+    except TypeError as e:
+        if "NoneType" in str(e) and "len" in str(e):
+            raise ValueError(
+                f"Failed to iterate over {split_name} dataloader. "
+                f"The dataloader may be None or not properly initialized. "
+                f"Original error: {e}\n"
+                f"Please ensure your dataset has a {split} split configured."
+            ) from e
+        raise
+
+    if len(all_predictions) == 0:
+        raise ValueError(
+            f"No data was collected from {split_name}. "
+            f"The dataloader may be empty or no batches were processed."
+        )
 
     predictions = torch.cat(all_predictions, dim=0).numpy()
     probabilities = torch.cat(all_probabilities, dim=0).numpy()
