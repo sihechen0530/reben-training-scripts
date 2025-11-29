@@ -55,10 +55,10 @@ def main(
         run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
         devices: int = typer.Option(None, help="Number of GPUs to use (None = auto-detect)"),
         strategy: str = typer.Option(None, help="Training strategy (None = auto, 'ddp', 'ddp_spawn', etc.)"),
-        use_asymmetric_loss: bool = typer.Option(False, help="Use asymmetric loss (Ridnik et al.) instead of BCEWithLogitsLoss"),
-        asym_gamma_pos: float = typer.Option(0.0, help="Asymmetric loss focusing parameter for positives (gamma_pos)"),
-        asym_gamma_neg: float = typer.Option(4.0, help="Asymmetric loss focusing parameter for negatives (gamma_neg)"),
-        asym_clip: float = typer.Option(0.05, help="Probability clipping for negatives in asymmetric loss"),
+        use_mixup: bool = typer.Option(False, help="Use Mixup augmentation during training"),
+        use_cutmix: bool = typer.Option(False, help="Use CutMix augmentation during training"),
+        mixup_alpha: float = typer.Option(1.0, help="Mixup alpha parameter (Beta distribution)"),
+        cutmix_alpha: float = typer.Option(1.0, help="CutMix alpha parameter (Beta distribution)"),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -123,10 +123,10 @@ def main(
         head_type=head_type,
         mlp_hidden_dims=mlp_dims,
         head_dropout=head_dropout_val,
-        use_asymmetric_loss=use_asymmetric_loss,
-        asym_gamma_pos=asym_gamma_pos,
-        asym_gamma_neg=asym_gamma_neg,
-        asym_clip=asym_clip,
+        use_mixup=use_mixup,
+        use_cutmix=use_cutmix,
+        mixup_alpha=mixup_alpha,
+        cutmix_alpha=cutmix_alpha,
     )
 
     # Generate unique run name if not provided
@@ -159,10 +159,10 @@ def main(
         "head_mlp_dims": mlp_dims,
         "head_dropout": head_dropout_val,
         "run_name": run_name,
-        "use_asymmetric_loss": use_asymmetric_loss,
-        "asym_gamma_pos": asym_gamma_pos,
-        "asym_gamma_neg": asym_gamma_neg,
-        "asym_clip": asym_clip,
+        "use_mixup": use_mixup,
+        "use_cutmix": use_cutmix,
+        "mixup_alpha": mixup_alpha,
+        "cutmix_alpha": cutmix_alpha,
     }
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 

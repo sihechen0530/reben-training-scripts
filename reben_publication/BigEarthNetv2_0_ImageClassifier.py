@@ -2,6 +2,7 @@
 This is a script for supervised image classification using the BigEarthNet v2.0 dataset.
 """
 # import packages
+import math
 from typing import List, Optional
 
 import lightning.pytorch as pl
@@ -16,74 +17,6 @@ from configilm.extra.CustomTorchClasses import LinearWarmupCosineAnnealingLR
 from configilm.metrics import get_classification_metric_collection
 from huggingface_hub import PyTorchModelHubMixin
 
-
-class AsymmetricLossMultiLabel(nn.Module):
-    """
-    Asymmetric Loss for Multi-Label Classification
-
-    Based on:
-      "Asymmetric Loss For Multi-Label Classification" (Ridnik et al., ICCV 2021)
-
-    This loss down-weights easy negatives (with a larger focusing parameter for negatives)
-    which is useful for highly imbalanced multi-label problems like BigEarthNet.
-    """
-
-    def __init__(
-        self,
-        gamma_pos: float = 0.0,
-        gamma_neg: float = 4.0,
-        clip: float = 0.05,
-        eps: float = 1e-8,
-        disable_torch_grad_focal_loss: bool = False,
-        reduction: str = "mean",
-    ) -> None:
-        super().__init__()
-        self.gamma_pos = gamma_pos
-        self.gamma_neg = gamma_neg
-        self.clip = clip
-        self.eps = eps
-        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
-        assert reduction in {"mean", "sum", "none"}
-        self.reduction = reduction
-
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            logits: (N, C) raw, unnormalized scores
-            targets: (N, C) multi-hot labels in {0,1}
-        """
-        # Sigmoid probabilities
-        x_sigmoid = torch.sigmoid(logits)
-        xs_pos = x_sigmoid
-        xs_neg = 1.0 - x_sigmoid
-
-        # Clamp negative probabilities to prevent extremely easy negatives
-        if self.clip is not None and self.clip > 0:
-            xs_neg = (xs_neg + self.clip).clamp(max=1.0)
-
-        # Basic BCE
-        xs_pos = xs_pos.clamp(min=self.eps, max=1.0 - self.eps)
-        xs_neg = xs_neg.clamp(min=self.eps, max=1.0 - self.eps)
-
-        loss = targets * torch.log(xs_pos) + (1.0 - targets) * torch.log(xs_neg)
-
-        # Asymmetric focusing for positives and negatives
-        if self.gamma_pos > 0.0 or self.gamma_neg > 0.0:
-            with torch.set_grad_enabled(not self.disable_torch_grad_focal_loss):
-                pt_pos = xs_pos * targets
-                pt_neg = xs_neg * (1.0 - targets)
-                pt = pt_pos + pt_neg
-                one_sided_gamma = self.gamma_pos * targets + self.gamma_neg * (1.0 - targets)
-                one_sided_w = (1.0 - pt) ** one_sided_gamma
-                loss = loss * one_sided_w
-
-        loss = -loss
-        if self.reduction == "mean":
-            return loss.mean()
-        if self.reduction == "sum":
-            return loss.sum()
-        return loss
-
 # DINOv3 support
 try:
     from reben_publication.DINOv3Backbone import DINOv3Backbone
@@ -92,6 +25,81 @@ except ImportError:
     DINOV3_AVAILABLE = False
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
+
+
+def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 1.0) -> tuple:
+    """
+    Apply Mixup augmentation to a batch.
+    
+    Args:
+        x: Input images tensor of shape (B, C, H, W)
+        y: Labels tensor of shape (B, num_classes) for multilabel
+        alpha: Beta distribution parameter (alpha=1.0 means uniform distribution)
+    
+    Returns:
+        Mixed images and labels
+    """
+    if alpha > 0:
+        lam = torch.distributions.Beta(alpha, alpha).sample().item()
+    else:
+        lam = 1.0
+    
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(x.device)
+    
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    
+    return mixed_x, y_a, y_b, lam
+
+
+def cutmix_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 1.0) -> tuple:
+    """
+    Apply CutMix augmentation to a batch.
+    
+    Args:
+        x: Input images tensor of shape (B, C, H, W)
+        y: Labels tensor of shape (B, num_classes) for multilabel
+        alpha: Beta distribution parameter
+    
+    Returns:
+        Mixed images and labels
+    """
+    if alpha > 0:
+        lam = torch.distributions.Beta(alpha, alpha).sample().item()
+    else:
+        lam = 1.0
+    
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(x.device)
+    
+    # Generate random bounding box
+    W, H = x.size(3), x.size(2)
+    cut_rat = math.sqrt(1.0 - lam)
+    cut_w = int(W * cut_rat)
+    cut_h = int(H * cut_rat)
+    
+    # Random center
+    cx = torch.randint(W, (1,)).item()
+    cy = torch.randint(H, (1,)).item()
+    
+    # Clamp bounding box coordinates
+    bbx1 = max(0, cx - cut_w // 2)
+    bby1 = max(0, cy - cut_h // 2)
+    bbx2 = min(W, cx + cut_w // 2)
+    bby2 = min(H, cy + cut_h // 2)
+    
+    # Create a copy to avoid in-place modification
+    x_mixed = x.clone()
+    # Apply CutMix: paste region from shuffled batch
+    x_mixed[:, :, bby1:bby2, bbx1:bbx2] = x[index, :, bby1:bby2, bbx1:bbx2]
+    
+    # Adjust lambda to match actual pixel ratio
+    lam = 1.0 - ((bbx2 - bbx1) * (bby2 - bby1) / (W * H))
+    
+    y_a, y_b = y, y[index]
+    
+    return x_mixed, y_a, y_b, lam
 
 
 class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
@@ -113,10 +121,10 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             head_type: str = "linear",
             mlp_hidden_dims: Optional[List[int]] = None,
             head_dropout: Optional[float] = None,
-            use_asymmetric_loss: bool = False,
-            asym_gamma_pos: float = 0.0,
-            asym_gamma_neg: float = 4.0,
-            asym_clip: float = 0.05,
+            use_mixup: bool = False,
+            use_cutmix: bool = False,
+            mixup_alpha: float = 1.0,
+            cutmix_alpha: float = 1.0,
             **kwargs,  # Accept extra kwargs for backward compatibility
     ):
         super().__init__()
@@ -127,10 +135,15 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         self.head_type = head_type.lower()
         self.mlp_hidden_dims = mlp_hidden_dims or []
         self.head_dropout = head_dropout if head_dropout is not None else getattr(config, 'drop_rate', 0.15)
-        self.use_asymmetric_loss = bool(use_asymmetric_loss)
-        self.asym_gamma_pos = float(asym_gamma_pos)
-        self.asym_gamma_neg = float(asym_gamma_neg)
-        self.asym_clip = float(asym_clip)
+        
+        # Mixup/CutMix augmentation settings
+        self.use_mixup = use_mixup
+        self.use_cutmix = use_cutmix
+        self.mixup_alpha = mixup_alpha
+        self.cutmix_alpha = cutmix_alpha
+        
+        if self.use_mixup and self.use_cutmix:
+            raise ValueError("Cannot use both Mixup and CutMix simultaneously. Choose one.")
         
         # DEBUG: Print classifier configuration
         print(f"\n{'='*60}")
@@ -139,6 +152,10 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         print(f"  head_type: {self.head_type}")
         print(f"  mlp_hidden_dims: {self.mlp_hidden_dims}")
         print(f"  head_dropout: {self.head_dropout}")
+        if self.use_mixup:
+            print(f"  Using Mixup augmentation with alpha={self.mixup_alpha}")
+        if self.use_cutmix:
+            print(f"  Using CutMix augmentation with alpha={self.cutmix_alpha}")
         print(f"{'='*60}\n")
         
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
@@ -216,22 +233,7 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             self.model = ConfigILM.ConfigILM(config)
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
-
-        # Loss function: standard BCE or Asymmetric Loss for multi-label
-        if self.use_asymmetric_loss:
-            print(
-                f"Using AsymmetricLossMultiLabel: "
-                f"gamma_pos={self.asym_gamma_pos}, "
-                f"gamma_neg={self.asym_gamma_neg}, "
-                f"clip={self.asym_clip}"
-            )
-            self.loss = AsymmetricLossMultiLabel(
-                gamma_pos=self.asym_gamma_pos,
-                gamma_neg=self.asym_gamma_neg,
-                clip=self.asym_clip,
-            )
-        else:
-            self.loss = torch.nn.BCEWithLogitsLoss()
+        self.loss = torch.nn.BCEWithLogitsLoss()
         self.val_metrics_micro = get_classification_metric_collection(
             "multilabel", "micro", num_labels=config.classes, prefix="val/"
         )
@@ -317,8 +319,22 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        x_hat = self.model(x)
-        loss = self.loss(x_hat, y)
+        
+        # Apply Mixup or CutMix augmentation if enabled
+        if self.use_mixup:
+            x, y_a, y_b, lam = mixup_data(x, y, alpha=self.mixup_alpha)
+            x_hat = self.model(x)
+            # For multilabel, mix labels proportionally
+            loss = lam * self.loss(x_hat, y_a) + (1 - lam) * self.loss(x_hat, y_b)
+        elif self.use_cutmix:
+            x, y_a, y_b, lam = cutmix_data(x, y, alpha=self.cutmix_alpha)
+            x_hat = self.model(x)
+            # For multilabel, mix labels proportionally
+            loss = lam * self.loss(x_hat, y_a) + (1 - lam) * self.loss(x_hat, y_b)
+        else:
+            x_hat = self.model(x)
+            loss = self.loss(x_hat, y)
+        
         self.log("train/loss", loss)
         if torch.cuda.is_available():
             current_gpu = torch.cuda.current_device()
