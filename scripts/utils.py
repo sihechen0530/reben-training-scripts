@@ -508,7 +508,7 @@ def compute_class_weights(dm: BENv2DataModule, num_classes: int = 19, max_sample
     Compute class weights for weighted loss from the training dataset.
     
     For multilabel classification with BCEWithLogitsLoss, we compute pos_weight as:
-    pos_weight = (num_negative_samples / num_positive_samples) for each class
+    pos_weight = sqrt(num_negative_samples / num_positive_samples) for each class
     
     Args:
         dm: BENv2DataModule instance (must have setup() called)
@@ -553,10 +553,11 @@ def compute_class_weights(dm: BENv2DataModule, num_classes: int = 19, max_sample
             print(f"Warning: Error processing sample {i}: {e}")
             continue
     
-    # Compute pos_weight: num_negative / num_positive for each class
+    # Compute pos_weight: sqrt(num_negative / num_positive) for each class
     # Add small epsilon to avoid division by zero
     epsilon = 1e-8
-    pos_weight = (negative_counts + epsilon) / (positive_counts + epsilon)
+    ratio = (negative_counts + epsilon) / (positive_counts + epsilon)
+    pos_weight = torch.sqrt(ratio)
     
     print(f"Class weights (pos_weight) computed:")
     from configilm.extra.BENv2_utils import NEW_LABELS
