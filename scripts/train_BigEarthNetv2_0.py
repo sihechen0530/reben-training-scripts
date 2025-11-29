@@ -19,7 +19,7 @@ from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
-from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm, get_job_run_directory, snapshot_config_file, compute_class_weights
+from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm, get_job_run_directory, snapshot_config_file
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -55,8 +55,10 @@ def main(
         run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
         devices: int = typer.Option(None, help="Number of GPUs to use (None = auto-detect)"),
         strategy: str = typer.Option(None, help="Training strategy (None = auto, 'ddp', 'ddp_spawn', etc.)"),
-        use_weighted_loss: bool = typer.Option(False, help="Use weighted loss based on class distribution"),
-        max_samples_for_weights: int = typer.Option(None, help="Maximum number of samples to use for computing class weights (None = use all)"),
+        use_asymmetric_loss: bool = typer.Option(False, help="Use asymmetric loss (Ridnik et al.) instead of BCEWithLogitsLoss"),
+        asym_gamma_pos: float = typer.Option(0.0, help="Asymmetric loss focusing parameter for positives (gamma_pos)"),
+        asym_gamma_neg: float = typer.Option(4.0, help="Asymmetric loss focusing parameter for negatives (gamma_neg)"),
+        asym_clip: float = typer.Option(0.05, help="Probability clipping for negatives in asymmetric loss"),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -112,6 +114,21 @@ def main(
         mlp_dims = [int(dim.strip()) for dim in head_mlp_dims.split(",") if dim.strip()]
     head_dropout_val = head_dropout if head_dropout is not None else drop_rate
 
+    model = BigEarthNetv2_0_ImageClassifier(
+        ilm_config,
+        lr=lr,
+        warmup=warmup,
+        dinov3_model_name=dinov3_name,
+        linear_probe=linear_probe,
+        head_type=head_type,
+        mlp_hidden_dims=mlp_dims,
+        head_dropout=head_dropout_val,
+        use_asymmetric_loss=use_asymmetric_loss,
+        asym_gamma_pos=asym_gamma_pos,
+        asym_gamma_neg=asym_gamma_neg,
+        asym_clip=asym_clip,
+    )
+
     # Generate unique run name if not provided
     if run_name is None:
         from datetime import datetime
@@ -142,6 +159,10 @@ def main(
         "head_mlp_dims": mlp_dims,
         "head_dropout": head_dropout_val,
         "run_name": run_name,
+        "use_asymmetric_loss": use_asymmetric_loss,
+        "asym_gamma_pos": asym_gamma_pos,
+        "asym_gamma_neg": asym_gamma_neg,
+        "asym_clip": asym_clip,
     }
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
@@ -149,28 +170,6 @@ def main(
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)  # Allow mock data for testing
     dm = default_dm(hparams, data_dirs, img_size)
-    
-    # Compute class weights if weighted loss is enabled
-    pos_weight = None
-    if use_weighted_loss:
-        pos_weight = compute_class_weights(dm, num_classes=num_classes, max_samples=max_samples_for_weights)
-        hparams["use_weighted_loss"] = True
-        hparams["pos_weight"] = pos_weight.tolist()  # Store as list for logging
-    else:
-        hparams["use_weighted_loss"] = False
-
-    # Create model with computed class weights
-    model = BigEarthNetv2_0_ImageClassifier(
-        ilm_config,
-        lr=lr,
-        warmup=warmup,
-        dinov3_model_name=dinov3_name,
-        linear_probe=linear_probe,
-        head_type=head_type,
-        mlp_hidden_dims=mlp_dims,
-        head_dropout=head_dropout_val,
-        pos_weight=pos_weight,
-    )
 
     # Handle checkpoint resume
     ckpt_path = None
