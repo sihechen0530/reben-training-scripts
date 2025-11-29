@@ -388,12 +388,15 @@ def load_model_and_infer(
         data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
         dm = default_dm(hparams, data_dirs, img_size)
 
+        # Use strict=False to allow loading checkpoints that may contain
+        # extra keys such as loss.pos_weight from weighted-loss training.
         model = BigEarthNetv2_0_ImageClassifier.load_from_checkpoint(
             str(ckpt_path),
             config=config,
             lr=lr,
             warmup=warmup,
             dinov3_model_name=dinov3_name,
+            strict=False,
         )
         model.eval()
 
