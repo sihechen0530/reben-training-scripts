@@ -503,6 +503,78 @@ def default_trainer(
     return trainer
 
 
+def compute_class_frequencies(dm, num_classes: int = 19, max_samples: Optional[int] = None, rare_threshold: float = 0.1) -> tuple:
+    """
+    Compute class frequencies from training dataset to identify rare vs common classes.
+    
+    Args:
+        dm: BENv2DataModule instance (must have setup() called)
+        num_classes: Number of classes (default: 19 for BigEarthNet v2.0)
+        max_samples: Maximum number of samples to use for computation (None = use all)
+        rare_threshold: Frequency threshold below which classes are considered rare (default: 0.1 = 10%)
+    
+    Returns:
+        Tuple of (class_frequencies, rare_class_indices, common_class_indices)
+        - class_frequencies: Tensor of shape [num_classes] with frequency of each class
+        - rare_class_indices: List of class indices that are rare (below threshold)
+        - common_class_indices: List of class indices that are common (above or equal to threshold)
+    """
+    print("Computing class frequencies to identify rare vs common classes...")
+    
+    # Ensure datamodule is set up
+    if not hasattr(dm, 'train_ds') or dm.train_ds is None:
+        dm.setup("fit")
+    
+    # Count positive samples for each class
+    positive_counts = torch.zeros(num_classes, dtype=torch.float32)
+    
+    total_samples = len(dm.train_ds)
+    if max_samples is not None:
+        total_samples = min(total_samples, max_samples)
+    
+    print(f"Processing {total_samples} samples to compute class frequencies...")
+    
+    # Iterate through dataset to count class occurrences
+    for i in range(total_samples):
+        if (i + 1) % 10000 == 0:
+            print(f"  Processed {i + 1}/{total_samples} samples...")
+        
+        try:
+            _, label = dm.train_ds[i]
+            if isinstance(label, torch.Tensor):
+                label = label.float()
+            else:
+                label = torch.tensor(label, dtype=torch.float32)
+            
+            # Count positive samples for each class
+            positive_counts += label
+        except Exception as e:
+            print(f"Warning: Error processing sample {i}: {e}")
+            continue
+    
+    # Compute frequencies (normalize by total samples)
+    class_frequencies = positive_counts / total_samples
+    
+    # Identify rare vs common classes using threshold
+    rare_class_indices = [i for i in range(num_classes) if class_frequencies[i] < rare_threshold]
+    common_class_indices = [i for i in range(num_classes) if class_frequencies[i] >= rare_threshold]
+    
+    print(f"\nClass frequency analysis:")
+    print(f"  Rare threshold: {rare_threshold:.4f} ({rare_threshold*100:.1f}%)")
+    print(f"  Rare classes ({len(rare_class_indices)}): {rare_class_indices}")
+    print(f"  Common classes ({len(common_class_indices)}): {common_class_indices}")
+    
+    from configilm.extra.BENv2_utils import NEW_LABELS
+    print(f"\nRare classes:")
+    for idx in rare_class_indices:
+        print(f"  {NEW_LABELS[idx]}: {class_frequencies[idx]:.4f}")
+    print(f"\nCommon classes:")
+    for idx in common_class_indices:
+        print(f"  {NEW_LABELS[idx]}: {class_frequencies[idx]:.4f}")
+    
+    return class_frequencies, rare_class_indices, common_class_indices
+
+
 def default_dm(
         hparams,
         data_dirs,

@@ -19,7 +19,7 @@ from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
-from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm, get_job_run_directory, snapshot_config_file
+from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm, get_job_run_directory, snapshot_config_file, compute_class_frequencies
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
@@ -55,10 +55,12 @@ def main(
         run_name: str = typer.Option(None, help="Custom name for this run. Defaults to <architecture>-<bandconfig>-<seed>-<timestamp>"),
         devices: int = typer.Option(None, help="Number of GPUs to use (None = auto-detect)"),
         strategy: str = typer.Option(None, help="Training strategy (None = auto, 'ddp', 'ddp_spawn', etc.)"),
-        use_mixup: bool = typer.Option(False, help="Use Mixup augmentation during training"),
-        use_cutmix: bool = typer.Option(False, help="Use CutMix augmentation during training"),
-        mixup_alpha: float = typer.Option(1.0, help="Mixup alpha parameter (Beta distribution)"),
-        cutmix_alpha: float = typer.Option(1.0, help="CutMix alpha parameter (Beta distribution)"),
+        use_copy_paste: bool = typer.Option(False, help="Use Class-Aware Copy-Paste augmentation to handle data imbalance"),
+        copy_paste_prob: float = typer.Option(0.3, help="Probability of applying copy-paste to each sample"),
+        copy_paste_min_scale: float = typer.Option(0.5, help="Minimum scale of cropped region (relative to image size)"),
+        copy_paste_max_scale: float = typer.Option(0.7, help="Maximum scale of cropped region (relative to image size)"),
+        copy_paste_rare_threshold: float = typer.Option(0.1, help="Frequency threshold below which classes are considered rare (default: 0.1 = 10%%)"),
+        max_samples_for_freq: int = typer.Option(50000, help="Maximum number of samples to use for computing class frequencies"),
 ):
     assert Path(".").resolve().name == "scripts", \
         "Please run this script from the scripts directory. Otherwise some relative paths might not work."
@@ -114,21 +116,6 @@ def main(
         mlp_dims = [int(dim.strip()) for dim in head_mlp_dims.split(",") if dim.strip()]
     head_dropout_val = head_dropout if head_dropout is not None else drop_rate
 
-    model = BigEarthNetv2_0_ImageClassifier(
-        ilm_config,
-        lr=lr,
-        warmup=warmup,
-        dinov3_model_name=dinov3_name,
-        linear_probe=linear_probe,
-        head_type=head_type,
-        mlp_hidden_dims=mlp_dims,
-        head_dropout=head_dropout_val,
-        use_mixup=use_mixup,
-        use_cutmix=use_cutmix,
-        mixup_alpha=mixup_alpha,
-        cutmix_alpha=cutmix_alpha,
-    )
-
     # Generate unique run name if not provided
     if run_name is None:
         from datetime import datetime
@@ -159,10 +146,10 @@ def main(
         "head_mlp_dims": mlp_dims,
         "head_dropout": head_dropout_val,
         "run_name": run_name,
-        "use_mixup": use_mixup,
-        "use_cutmix": use_cutmix,
-        "mixup_alpha": mixup_alpha,
-        "cutmix_alpha": cutmix_alpha,
+        "use_copy_paste": use_copy_paste,
+        "copy_paste_prob": copy_paste_prob,
+        "copy_paste_min_scale": copy_paste_min_scale,
+        "copy_paste_max_scale": copy_paste_max_scale,
     }
     trainer = default_trainer(hparams, use_wandb, test_run, devices=devices, strategy=strategy)
 
@@ -170,6 +157,39 @@ def main(
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)  # Allow mock data for testing
     dm = default_dm(hparams, data_dirs, img_size)
+    
+    # Compute class frequencies for Copy-Paste if enabled
+    rare_class_indices = None
+    common_class_indices = None
+    if use_copy_paste:
+        print("\nComputing class frequencies for Class-Aware Copy-Paste...")
+        _, rare_class_indices, common_class_indices = compute_class_frequencies(
+            dm, num_classes=num_classes, max_samples=max_samples_for_freq, rare_threshold=copy_paste_rare_threshold
+        )
+        hparams["use_copy_paste"] = True
+        hparams["rare_class_indices"] = rare_class_indices
+        hparams["common_class_indices"] = common_class_indices
+        hparams["copy_paste_rare_threshold"] = copy_paste_rare_threshold
+    else:
+        hparams["use_copy_paste"] = False
+
+    # Create model after computing class frequencies (needed for copy-paste)
+    model = BigEarthNetv2_0_ImageClassifier(
+        ilm_config,
+        lr=lr,
+        warmup=warmup,
+        dinov3_model_name=dinov3_name,
+        linear_probe=linear_probe,
+        head_type=head_type,
+        mlp_hidden_dims=mlp_dims,
+        head_dropout=head_dropout_val,
+        use_copy_paste=use_copy_paste,
+        copy_paste_prob=copy_paste_prob,
+        copy_paste_min_scale=copy_paste_min_scale,
+        copy_paste_max_scale=copy_paste_max_scale,
+        rare_class_indices=rare_class_indices,
+        common_class_indices=common_class_indices,
+    )
 
     # Handle checkpoint resume
     ckpt_path = None

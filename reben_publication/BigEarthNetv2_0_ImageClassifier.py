@@ -2,7 +2,6 @@
 This is a script for supervised image classification using the BigEarthNet v2.0 dataset.
 """
 # import packages
-import math
 from typing import List, Optional
 
 import lightning.pytorch as pl
@@ -27,79 +26,94 @@ except ImportError:
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
 
 
-def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 1.0) -> tuple:
+def class_aware_copy_paste(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    rare_class_indices: List[int],
+    common_class_indices: List[int],
+    prob: float = 0.5,
+    min_scale: float = 0.2,
+    max_scale: float = 0.5,
+) -> tuple:
     """
-    Apply Mixup augmentation to a batch.
+    Apply Class-Aware Copy-Paste augmentation to a batch.
+    
+    Strategy:
+    - Background: Sample an image with common classes
+    - Foreground: Sample an image with rare classes
+    - Action: Crop a random chunk from the rare image and paste it onto the common image
+    - Label: Update the label to include both sets of classes
     
     Args:
         x: Input images tensor of shape (B, C, H, W)
         y: Labels tensor of shape (B, num_classes) for multilabel
-        alpha: Beta distribution parameter (alpha=1.0 means uniform distribution)
+        rare_class_indices: List of class indices that are rare
+        common_class_indices: List of class indices that are common
+        prob: Probability of applying copy-paste to each sample
+        min_scale: Minimum scale of the cropped region (relative to image size)
+        max_scale: Maximum scale of the cropped region (relative to image size)
     
     Returns:
-        Mixed images and labels
+        Augmented images and labels
     """
-    if alpha > 0:
-        lam = torch.distributions.Beta(alpha, alpha).sample().item()
-    else:
-        lam = 1.0
-    
     batch_size = x.size(0)
-    index = torch.randperm(batch_size).to(x.device)
+    device = x.device
+    H, W = x.size(2), x.size(3)
     
-    mixed_x = lam * x + (1 - lam) * x[index, :]
-    y_a, y_b = y, y[index]
+    # Create output tensors
+    x_aug = x.clone()
+    y_aug = y.clone()
     
-    return mixed_x, y_a, y_b, lam
-
-
-def cutmix_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 1.0) -> tuple:
-    """
-    Apply CutMix augmentation to a batch.
+    # For each sample, decide whether to apply copy-paste
+    for i in range(batch_size):
+        if torch.rand(1).item() > prob:
+            continue  # Skip this sample
+        
+        # Find samples with rare classes (foreground) and common classes (background)
+        # Background: current sample should have common classes
+        has_common = torch.any(y[i, common_class_indices] > 0.5)
+        if not has_common:
+            continue  # Skip if current sample doesn't have common classes
+        
+        # Foreground: find another sample with rare classes
+        rare_mask = torch.any(y[:, rare_class_indices] > 0.5, dim=1)
+        rare_indices = torch.where(rare_mask)[0]
+        
+        if len(rare_indices) == 0:
+            continue  # No samples with rare classes in this batch
+        
+        # Exclude current sample from rare candidates
+        rare_indices = rare_indices[rare_indices != i]
+        if len(rare_indices) == 0:
+            continue
+        
+        # Randomly select a foreground sample
+        fg_idx = rare_indices[torch.randint(len(rare_indices), (1,)).item()].item()
+        
+        # Generate random bounding box for the crop/paste region
+        scale = torch.rand(1).item() * (max_scale - min_scale) + min_scale
+        crop_w = int(W * scale)
+        crop_h = int(H * scale)
+        
+        # Random position for the crop in foreground image
+        fg_x1 = torch.randint(0, max(1, W - crop_w + 1), (1,)).item()
+        fg_y1 = torch.randint(0, max(1, H - crop_h + 1), (1,)).item()
+        fg_x2 = fg_x1 + crop_w
+        fg_y2 = fg_y1 + crop_h
+        
+        # Random position for paste in background image
+        bg_x1 = torch.randint(0, max(1, W - crop_w + 1), (1,)).item()
+        bg_y1 = torch.randint(0, max(1, H - crop_h + 1), (1,)).item()
+        bg_x2 = bg_x1 + crop_w
+        bg_y2 = bg_y1 + crop_h
+        
+        # Copy region from foreground and paste onto background
+        x_aug[i, :, bg_y1:bg_y2, bg_x1:bg_x2] = x[fg_idx, :, fg_y1:fg_y2, fg_x1:fg_x2]
+        
+        # Update labels: combine background and foreground labels
+        y_aug[i] = torch.clamp(y[i] + y[fg_idx], 0.0, 1.0)
     
-    Args:
-        x: Input images tensor of shape (B, C, H, W)
-        y: Labels tensor of shape (B, num_classes) for multilabel
-        alpha: Beta distribution parameter
-    
-    Returns:
-        Mixed images and labels
-    """
-    if alpha > 0:
-        lam = torch.distributions.Beta(alpha, alpha).sample().item()
-    else:
-        lam = 1.0
-    
-    batch_size = x.size(0)
-    index = torch.randperm(batch_size).to(x.device)
-    
-    # Generate random bounding box
-    W, H = x.size(3), x.size(2)
-    cut_rat = math.sqrt(1.0 - lam)
-    cut_w = int(W * cut_rat)
-    cut_h = int(H * cut_rat)
-    
-    # Random center
-    cx = torch.randint(W, (1,)).item()
-    cy = torch.randint(H, (1,)).item()
-    
-    # Clamp bounding box coordinates
-    bbx1 = max(0, cx - cut_w // 2)
-    bby1 = max(0, cy - cut_h // 2)
-    bbx2 = min(W, cx + cut_w // 2)
-    bby2 = min(H, cy + cut_h // 2)
-    
-    # Create a copy to avoid in-place modification
-    x_mixed = x.clone()
-    # Apply CutMix: paste region from shuffled batch
-    x_mixed[:, :, bby1:bby2, bbx1:bbx2] = x[index, :, bby1:bby2, bbx1:bbx2]
-    
-    # Adjust lambda to match actual pixel ratio
-    lam = 1.0 - ((bbx2 - bbx1) * (bby2 - bby1) / (W * H))
-    
-    y_a, y_b = y, y[index]
-    
-    return x_mixed, y_a, y_b, lam
+    return x_aug, y_aug
 
 
 class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
@@ -121,10 +135,12 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             head_type: str = "linear",
             mlp_hidden_dims: Optional[List[int]] = None,
             head_dropout: Optional[float] = None,
-            use_mixup: bool = False,
-            use_cutmix: bool = False,
-            mixup_alpha: float = 1.0,
-            cutmix_alpha: float = 1.0,
+            use_copy_paste: bool = False,
+            copy_paste_prob: float = 0.3,
+            copy_paste_min_scale: float = 0.5,
+            copy_paste_max_scale: float = 0.7,
+            rare_class_indices: Optional[List[int]] = None,
+            common_class_indices: Optional[List[int]] = None,
             **kwargs,  # Accept extra kwargs for backward compatibility
     ):
         super().__init__()
@@ -136,14 +152,17 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         self.mlp_hidden_dims = mlp_hidden_dims or []
         self.head_dropout = head_dropout if head_dropout is not None else getattr(config, 'drop_rate', 0.15)
         
-        # Mixup/CutMix augmentation settings
-        self.use_mixup = use_mixup
-        self.use_cutmix = use_cutmix
-        self.mixup_alpha = mixup_alpha
-        self.cutmix_alpha = cutmix_alpha
+        # Class-Aware Copy-Paste augmentation settings
+        self.use_copy_paste = use_copy_paste
+        self.copy_paste_prob = copy_paste_prob
+        self.copy_paste_min_scale = copy_paste_min_scale
+        self.copy_paste_max_scale = copy_paste_max_scale
+        self.rare_class_indices = rare_class_indices or []
+        self.common_class_indices = common_class_indices or []
         
-        if self.use_mixup and self.use_cutmix:
-            raise ValueError("Cannot use both Mixup and CutMix simultaneously. Choose one.")
+        if self.use_copy_paste and (len(self.rare_class_indices) == 0 or len(self.common_class_indices) == 0):
+            print("Warning: Copy-Paste enabled but rare/common class indices not provided. "
+                  "Will be computed from datamodule during training setup.")
         
         # DEBUG: Print classifier configuration
         print(f"\n{'='*60}")
@@ -152,10 +171,11 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         print(f"  head_type: {self.head_type}")
         print(f"  mlp_hidden_dims: {self.mlp_hidden_dims}")
         print(f"  head_dropout: {self.head_dropout}")
-        if self.use_mixup:
-            print(f"  Using Mixup augmentation with alpha={self.mixup_alpha}")
-        if self.use_cutmix:
-            print(f"  Using CutMix augmentation with alpha={self.cutmix_alpha}")
+        if self.use_copy_paste:
+            print(f"  Using Class-Aware Copy-Paste augmentation")
+            print(f"    prob={self.copy_paste_prob}, scale=[{self.copy_paste_min_scale}, {self.copy_paste_max_scale}]")
+            if len(self.rare_class_indices) > 0:
+                print(f"    rare_classes={len(self.rare_class_indices)}, common_classes={len(self.common_class_indices)}")
         print(f"{'='*60}\n")
         
         assert config.network_type == ILMType.IMAGE_CLASSIFICATION
@@ -317,24 +337,40 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             print(f"    [{i}] {layer}")
         print()
 
+    def on_train_start(self):
+        """Compute class frequencies if copy-paste is enabled and indices not provided."""
+        super().on_train_start()
+        if self.use_copy_paste and (len(self.rare_class_indices) == 0 or len(self.common_class_indices) == 0):
+            from scripts.utils import compute_class_frequencies
+            print("Computing class frequencies for Copy-Paste augmentation...")
+            # Default threshold if not provided
+            rare_threshold = getattr(self, 'copy_paste_rare_threshold', 0.1)
+            _, rare_indices, common_indices = compute_class_frequencies(
+                self.trainer.datamodule,
+                num_classes=self.config.classes,
+                max_samples=50000,  # Use subset for faster computation
+                rare_threshold=rare_threshold
+            )
+            self.rare_class_indices = rare_indices
+            self.common_class_indices = common_indices
+            print(f"Copy-Paste: rare_classes={len(self.rare_class_indices)}, common_classes={len(self.common_class_indices)}")
+
     def training_step(self, batch, batch_idx):
         x, y = batch
         
-        # Apply Mixup or CutMix augmentation if enabled
-        if self.use_mixup:
-            x, y_a, y_b, lam = mixup_data(x, y, alpha=self.mixup_alpha)
-            x_hat = self.model(x)
-            # For multilabel, mix labels proportionally
-            loss = lam * self.loss(x_hat, y_a) + (1 - lam) * self.loss(x_hat, y_b)
-        elif self.use_cutmix:
-            x, y_a, y_b, lam = cutmix_data(x, y, alpha=self.cutmix_alpha)
-            x_hat = self.model(x)
-            # For multilabel, mix labels proportionally
-            loss = lam * self.loss(x_hat, y_a) + (1 - lam) * self.loss(x_hat, y_b)
-        else:
-            x_hat = self.model(x)
-            loss = self.loss(x_hat, y)
+        # Apply Class-Aware Copy-Paste augmentation if enabled
+        if self.use_copy_paste and len(self.rare_class_indices) > 0 and len(self.common_class_indices) > 0:
+            x, y = class_aware_copy_paste(
+                x, y,
+                rare_class_indices=self.rare_class_indices,
+                common_class_indices=self.common_class_indices,
+                prob=self.copy_paste_prob,
+                min_scale=self.copy_paste_min_scale,
+                max_scale=self.copy_paste_max_scale,
+            )
         
+        x_hat = self.model(x)
+        loss = self.loss(x_hat, y)
         self.log("train/loss", loss)
         if torch.cuda.is_available():
             current_gpu = torch.cuda.current_device()
