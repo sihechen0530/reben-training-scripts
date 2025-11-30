@@ -798,8 +798,24 @@ def load_model_and_infer(
             raise ValueError(
                 "Test dataloader is None. The datamodule may not have test data configured."
             )
-    device = next(model.parameters()).device
-
+    # Move model to GPU if available for faster inference
+    current_device = next(model.parameters()).device
+    if torch.cuda.is_available():
+        if current_device.type != 'cuda':
+            print(f"Moving model from {current_device} to GPU for faster inference...")
+            device = torch.device('cuda')
+            model = model.to(device)
+        else:
+            device = current_device
+            print(f"Model already on GPU: {device}")
+    else:
+        device = torch.device('cpu')
+        if current_device.type == 'cuda':
+            print(f"Warning: CUDA not available, moving model to CPU...")
+            model = model.to(device)
+        else:
+            print(f"Using CPU (CUDA not available)")
+    
     # Additional check: ensure dataloader is iterable
     try:
         # Try to get length or check if it's iterable
