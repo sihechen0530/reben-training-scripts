@@ -473,13 +473,57 @@ def load_model_and_infer(
         data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
         dm = default_dm(hparams, data_dirs, img_size)
 
-        model = BigEarthNetv2_0_ImageClassifier.load_from_checkpoint(
-            str(ckpt_path),
-            config=config,
-            lr=lr,
-            warmup=warmup,
-            dinov3_model_name=dinov3_name,
-        )
+        # Load checkpoint and filter out unexpected keys (like loss.pos_weight)
+        try:
+            model = BigEarthNetv2_0_ImageClassifier.load_from_checkpoint(
+                str(ckpt_path),
+                config=config,
+                lr=lr,
+                warmup=warmup,
+                dinov3_model_name=dinov3_name,
+            )
+        except RuntimeError as e:
+            if "Unexpected key(s)" in str(e) or "loss.pos_weight" in str(e):
+                print(f"Warning: Checkpoint contains unexpected keys. Filtering them out...")
+                # Manually load and filter state_dict
+                checkpoint_data = torch.load(ckpt_path, map_location="cpu")
+                
+                # Create model first
+                model = BigEarthNetv2_0_ImageClassifier(
+                    config=config,
+                    lr=lr,
+                    warmup=warmup,
+                    dinov3_model_name=dinov3_name,
+                )
+                
+                # Get state_dict from checkpoint
+                if "state_dict" in checkpoint_data:
+                    state_dict = checkpoint_data["state_dict"]
+                else:
+                    state_dict = checkpoint_data
+                
+                # Filter out keys that don't belong to the model
+                # Remove keys that start with "loss." or other non-model prefixes
+                filtered_state_dict = {}
+                model_state_dict = model.state_dict()
+                for key, value in state_dict.items():
+                    # Skip loss-related keys and other non-model keys
+                    if key.startswith("loss."):
+                        continue
+                    # Only include keys that are in the model's state_dict
+                    if key in model_state_dict:
+                        filtered_state_dict[key] = value
+                    # Also try to match keys with "model." prefix removed
+                    elif key.startswith("model."):
+                        model_key = key[6:]  # Remove "model." prefix
+                        if model_key in model_state_dict:
+                            filtered_state_dict[model_key] = value
+                
+                # Load filtered state_dict
+                model.load_state_dict(filtered_state_dict, strict=False)
+                print(f"Loaded model with {len(filtered_state_dict)}/{len(state_dict)} keys")
+            else:
+                raise
         model.eval()
 
     # Multimodal checkpoint ----------------------------------------------------
@@ -662,18 +706,67 @@ def load_model_and_infer(
         data_dirs = resolve_data_dir(data_dirs, allow_mock=False)
         dm = default_dm(hparams, data_dirs, img_size)
 
-        model = MultiModalLightningModule.load_from_checkpoint(
-            str(ckpt_path),
-            config=config,
-            lr=lr,
-            warmup=None if warmup == -1 else warmup,
-            dinov3_checkpoint=None,
-            resnet_checkpoint=None,
-            freeze_dinov3=False,
-            freeze_resnet=False,
-            dinov3_model_name=dinov3_model_name,
-            threshold=threshold,
-        )
+        # Load checkpoint and filter out unexpected keys (like loss.pos_weight)
+        try:
+            model = MultiModalLightningModule.load_from_checkpoint(
+                str(ckpt_path),
+                config=config,
+                lr=lr,
+                warmup=None if warmup == -1 else warmup,
+                dinov3_checkpoint=None,
+                resnet_checkpoint=None,
+                freeze_dinov3=False,
+                freeze_resnet=False,
+                dinov3_model_name=dinov3_model_name,
+                threshold=threshold,
+            )
+        except RuntimeError as e:
+            if "Unexpected key(s)" in str(e) or "loss.pos_weight" in str(e):
+                print(f"Warning: Checkpoint contains unexpected keys. Filtering them out...")
+                # Manually load and filter state_dict
+                checkpoint_data = torch.load(ckpt_path, map_location="cpu")
+                
+                # Create model first
+                model = MultiModalLightningModule(
+                    config=config,
+                    lr=lr,
+                    warmup=None if warmup == -1 else warmup,
+                    dinov3_checkpoint=None,
+                    resnet_checkpoint=None,
+                    freeze_dinov3=False,
+                    freeze_resnet=False,
+                    dinov3_model_name=dinov3_model_name,
+                    threshold=threshold,
+                )
+                
+                # Get state_dict from checkpoint
+                if "state_dict" in checkpoint_data:
+                    state_dict = checkpoint_data["state_dict"]
+                else:
+                    state_dict = checkpoint_data
+                
+                # Filter out keys that don't belong to the model
+                # Remove keys that start with "loss." or other non-model prefixes
+                filtered_state_dict = {}
+                model_state_dict = model.state_dict()
+                for key, value in state_dict.items():
+                    # Skip loss-related keys and other non-model keys
+                    if key.startswith("loss."):
+                        continue
+                    # Only include keys that are in the model's state_dict
+                    if key in model_state_dict:
+                        filtered_state_dict[key] = value
+                    # Also try to match keys with "model." prefix removed
+                    elif key.startswith("model."):
+                        model_key = key[6:]  # Remove "model." prefix
+                        if model_key in model_state_dict:
+                            filtered_state_dict[model_key] = value
+                
+                # Load filtered state_dict
+                model.load_state_dict(filtered_state_dict, strict=False)
+                print(f"Loaded model with {len(filtered_state_dict)}/{len(state_dict)} keys")
+            else:
+                raise
         model.eval()
 
     else:
