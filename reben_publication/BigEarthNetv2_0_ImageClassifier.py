@@ -3,6 +3,7 @@ This is a script for supervised image classification using the BigEarthNet v2.0 
 """
 # import packages
 from typing import List, Optional
+import random
 
 import lightning.pytorch as pl
 import torch
@@ -140,7 +141,11 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             self.model = ConfigILM.ConfigILM(config)
         self.val_output_list: List[dict] = []
         self.test_output_list: List[dict] = []
+        # Initialize loss without weights - will be updated in setup() if linear_probe=True
         self.loss = torch.nn.BCEWithLogitsLoss()
+        # Initialize class_weights as None - will be set if linear_probe=True
+        # This allows loading checkpoints that don't have this buffer
+        self.register_buffer('class_weights', None)
         self.val_metrics_micro = get_classification_metric_collection(
             "multilabel", "micro", num_labels=config.classes, prefix="val/"
         )
@@ -165,6 +170,201 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         self.test_metrics_class = get_classification_metric_collection(
             "multilabel", None, num_labels=config.classes, prefix="test/"
         )
+
+    def _compute_class_weights(self):
+        """
+        Compute class weights from the training dataset for weighted loss.
+        Returns a tensor of shape [num_classes] with pos_weight values.
+        For multi-label classification: pos_weight[i] = num_negatives[i] / num_positives[i]
+        """
+        if not hasattr(self.trainer, 'datamodule') or self.trainer.datamodule is None:
+            print("WARNING: Cannot compute class weights - datamodule not available yet")
+            return None
+        
+        try:
+            train_ds = self.trainer.datamodule.train_ds
+            num_classes = self.config.classes
+            
+            # Collect all labels from training dataset
+            print("Computing class weights from training dataset...")
+            all_labels = []
+            
+            # Sample a subset if dataset is very large (for efficiency)
+            dataset_size = len(train_ds)
+            sample_size = min(10000, dataset_size)  # Sample up to 10k examples
+            
+            indices = random.sample(range(dataset_size), sample_size) if sample_size < dataset_size else range(dataset_size)
+            
+            for idx in indices:
+                try:
+                    _, labels = train_ds[idx]
+                    if isinstance(labels, torch.Tensor):
+                        all_labels.append(labels)
+                    else:
+                        all_labels.append(torch.tensor(labels, dtype=torch.float32))
+                except Exception:
+                    # Skip problematic samples
+                    continue
+            
+            if len(all_labels) == 0:
+                print("WARNING: Could not collect any labels for weight computation")
+                return None
+            
+            # Stack all labels
+            labels_tensor = torch.stack(all_labels)  # Shape: [num_samples, num_classes]
+            
+            # Compute positive and negative counts for each class
+            num_positives = labels_tensor.sum(dim=0)  # Shape: [num_classes]
+            num_negatives = labels_tensor.shape[0] - num_positives  # Shape: [num_classes]
+            
+            # Compute pos_weight: weight for positive examples
+            # pos_weight[i] = num_negatives[i] / num_positives[i]
+            # Add small epsilon to avoid division by zero
+            epsilon = 1e-8
+            pos_weight = num_negatives / (num_positives + epsilon)
+            
+            # Clip extreme weights to reasonable range (e.g., 0.1 to 100)
+            pos_weight = torch.clamp(pos_weight, min=0.1, max=100.0)
+            
+            print(f"Computed class weights (pos_weight):")
+            for i, weight in enumerate(pos_weight):
+                class_name = NEW_LABELS[i] if i < len(NEW_LABELS) else f"Class_{i}"
+                print(f"  {class_name}: {weight:.4f} (pos: {num_positives[i].item()}, neg: {num_negatives[i].item()})")
+            
+            return pos_weight
+            
+        except Exception as e:
+            print(f"WARNING: Error computing class weights: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+        """
+        Override to handle missing keys for class_weights and loss.pos_weight
+        when loading checkpoints from models trained without weighted loss.
+        Also handles unexpected keys when loading checkpoints with weighted loss into
+        a model that hasn't initialized weighted loss yet.
+        """
+        # Keys that are allowed to be missing (from old checkpoints)
+        allowed_missing_keys = [
+            f"{prefix}class_weights",
+            f"{prefix}loss.pos_weight",
+        ]
+        
+        # Keys that are allowed to be unexpected (from checkpoints with weighted loss)
+        # These might exist in checkpoints but not in current model if setup() hasn't run yet
+        allowed_unexpected_keys = [
+            f"{prefix}loss.pos_weight",
+        ]
+        
+        # Check which allowed keys are actually missing
+        missing_allowed = [k for k in allowed_missing_keys if k in missing_keys]
+        
+        # Check which allowed keys are unexpected
+        unexpected_allowed = [k for k in allowed_unexpected_keys if k in unexpected_keys]
+        
+        # Remove allowed missing keys from the list (modify in place)
+        for key in allowed_missing_keys:
+            if key in missing_keys:
+                missing_keys.remove(key)
+        
+        # Remove allowed unexpected keys from the list (modify in place)
+        for key in allowed_unexpected_keys:
+            if key in unexpected_keys:
+                unexpected_keys.remove(key)
+                # Also remove from state_dict so it doesn't cause issues
+                if key in state_dict:
+                    del state_dict[key]
+        
+        # Call parent with filtered missing and unexpected keys
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, 
+            missing_keys, unexpected_keys, error_msgs
+        )
+        
+        # Print informative messages about missing allowed keys
+        if f"{prefix}class_weights" in missing_allowed:
+            print(f"Note: Checkpoint does not contain 'class_weights' buffer. "
+                  f"This is normal for checkpoints trained without weighted loss.")
+        if f"{prefix}loss.pos_weight" in missing_allowed:
+            print(f"Note: Checkpoint does not contain 'loss.pos_weight' parameter. "
+                  f"This is normal for checkpoints trained without weighted loss.")
+        if f"{prefix}loss.pos_weight" in unexpected_allowed:
+            print(f"Note: Checkpoint contains 'loss.pos_weight' but current model doesn't have it yet. "
+                  f"This is normal - weights will be recomputed in setup() if linear_probe=True.")
+
+    def load_state_dict(self, state_dict, strict=True):
+        """
+        Override load_state_dict to handle missing keys for class_weights and loss.pos_weight.
+        This allows loading checkpoints that don't have weighted loss.
+        """
+        # Keys that are allowed to be missing (from old checkpoints)
+        allowed_missing_keys = [
+            "class_weights",
+            "loss.pos_weight",
+        ]
+        
+        # Get current model's state dict to see what keys we expect
+        model_keys = set(self.state_dict().keys())
+        checkpoint_keys = set(state_dict.keys())
+        
+        # Find missing keys
+        missing_keys = model_keys - checkpoint_keys
+        missing_allowed = [k for k in missing_keys if k in allowed_missing_keys]
+        
+        # Remove allowed missing keys from consideration
+        actual_missing = missing_keys - set(allowed_missing_keys)
+        
+        # Remove allowed unexpected keys from state_dict
+        for key in allowed_missing_keys:
+            if key in state_dict:
+                del state_dict[key]
+        
+        # If strict=True and there are non-allowed missing keys, raise error
+        if strict and actual_missing:
+            raise RuntimeError(
+                f"Error(s) in loading state_dict for {self.__class__.__name__}:\n"
+                f"        Missing key(s) in state_dict: {sorted(actual_missing)}."
+            )
+        
+        # Call parent with modified state_dict
+        # Use strict=False if we have allowed missing keys, otherwise use the original strict value
+        effective_strict = strict and not missing_allowed
+        super().load_state_dict(state_dict, strict=effective_strict)
+        
+        # Print informative messages about missing allowed keys
+        if "class_weights" in missing_allowed:
+            print(f"Note: Checkpoint does not contain 'class_weights' buffer. "
+                  f"This is normal for checkpoints trained without weighted loss.")
+        if "loss.pos_weight" in missing_allowed:
+            print(f"Note: Checkpoint does not contain 'loss.pos_weight' parameter. "
+                  f"This is normal for checkpoints trained without weighted loss.")
+
+    def setup(self, stage: str):
+        """
+        Lightning hook called after datamodule setup.
+        Compute class weights and update loss function if linear_probe=True.
+        """
+        super().setup(stage)
+        
+        if self.linear_probe and stage == "fit":
+            print("\n" + "="*60)
+            print("Linear probe mode detected - computing class weights for weighted loss")
+            print("="*60)
+            
+            pos_weight = self._compute_class_weights()
+            if pos_weight is not None:
+                # Update the buffer (it was initialized as None)
+                self.class_weights = pos_weight
+                # Update loss function with computed weights
+                # Use the registered buffer which will be on the correct device
+                self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=self.class_weights)
+                print(f"Updated loss function with class weights")
+                print("="*60 + "\n")
+            else:
+                print("WARNING: Could not compute class weights, using unweighted loss")
+                print("="*60 + "\n")
 
     def _override_classifier_head(self):
         """
