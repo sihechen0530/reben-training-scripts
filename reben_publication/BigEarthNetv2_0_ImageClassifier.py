@@ -341,6 +341,97 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
             print(f"Note: Checkpoint does not contain 'loss.pos_weight' parameter. "
                   f"This is normal for checkpoints trained without weighted loss.")
 
+    def on_load_checkpoint(self, checkpoint):
+        """
+        Lightning hook called when loading a checkpoint.
+        Handle cases where optimizer state has different parameter groups or is missing.
+        This happens when resuming with different linear_probe setting than the checkpoint.
+        """
+        # Check if optimizer state exists and if it matches current configuration
+        try:
+            # Check if checkpoint has optimizer states (might be missing if save_weights_only=True)
+            optimizer_states = checkpoint.get('optimizer_states')
+            
+            # Only process if optimizer_states is a non-empty list/tuple
+            if optimizer_states is not None:
+                # Check if it's iterable and has content
+                try:
+                    is_iterable = isinstance(optimizer_states, (list, tuple))
+                    has_content = is_iterable and len(optimizer_states) > 0
+                except (TypeError, AttributeError):
+                    has_content = False
+                
+                if has_content:
+                    try:
+                        # Get the number of parameter groups in the checkpoint
+                        first_optimizer = optimizer_states[0]
+                        if isinstance(first_optimizer, dict):
+                            checkpoint_num_groups = len(first_optimizer.get('param_groups', []))
+                        else:
+                            checkpoint_num_groups = None
+                    except (IndexError, TypeError, AttributeError):
+                        checkpoint_num_groups = None
+                    
+                    if checkpoint_num_groups is not None:
+                        # Determine expected number of groups for current configuration
+                        expected_num_groups = None
+                        try:
+                            if hasattr(self, "model") and hasattr(self.model, "backbone") and hasattr(self.model, "classifier") and self.linear_probe:
+                                # Linear probe: 1 group (classifier) or 2 groups (classifier + projection)
+                                try:
+                                    proj = None
+                                    if hasattr(self.model.backbone, 'embeddings') and hasattr(self.model.backbone.embeddings, 'patch_embeddings'):
+                                        pe = self.model.backbone.embeddings.patch_embeddings
+                                        if hasattr(pe, 'projection'):
+                                            proj = pe.projection
+                                        elif isinstance(pe, torch.nn.Conv2d):
+                                            proj = pe
+                                    expected_num_groups = 2 if proj is not None else 1
+                                except Exception:
+                                    expected_num_groups = 1
+                            else:
+                                # Full fine-tuning: 1 group (all parameters)
+                                expected_num_groups = 1
+                        except Exception:
+                            expected_num_groups = None
+                        
+                        # If mismatch, remove optimizer states to force re-initialization
+                        if expected_num_groups is None or checkpoint_num_groups != expected_num_groups:
+                            if expected_num_groups is not None:
+                                print(f"\n{'='*60}")
+                                print(f"WARNING: Optimizer state mismatch detected!")
+                                print(f"  Checkpoint has {checkpoint_num_groups} parameter group(s)")
+                                print(f"  Current configuration expects {expected_num_groups} parameter group(s)")
+                                print(f"  This likely means linear_probe setting changed between checkpoint and current run.")
+                            else:
+                                print(f"\n{'='*60}")
+                                print(f"WARNING: Cannot verify optimizer state compatibility!")
+                                print(f"  Checkpoint has {checkpoint_num_groups} parameter group(s)")
+                                print(f"  Removing optimizer state from checkpoint to avoid errors.")
+                            print(f"  Optimizer will be re-initialized with current configuration.")
+                            print(f"{'='*60}\n")
+                            
+                            # Delete keys instead of setting to None
+                            if 'optimizer_states' in checkpoint:
+                                del checkpoint['optimizer_states']
+                            if 'lr_schedulers' in checkpoint:
+                                del checkpoint['lr_schedulers']
+            elif optimizer_states is None:
+                # Checkpoint doesn't have optimizer states (save_weights_only=True)
+                print(f"Note: Checkpoint does not contain optimizer state (save_weights_only=True). "
+                      f"Optimizer will be initialized from scratch.")
+        except Exception as e:
+            # If anything goes wrong, remove optimizer state to be safe
+            print(f"\nWARNING: Error checking optimizer state compatibility: {e}")
+            print("Removing optimizer state from checkpoint to avoid errors.\n")
+            if 'optimizer_states' in checkpoint:
+                del checkpoint['optimizer_states']
+            if 'lr_schedulers' in checkpoint:
+                del checkpoint['lr_schedulers']
+        
+        # Call parent hook
+        super().on_load_checkpoint(checkpoint)
+
     def setup(self, stage: str):
         """
         Lightning hook called after datamodule setup.
