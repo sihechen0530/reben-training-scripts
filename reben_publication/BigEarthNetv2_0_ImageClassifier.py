@@ -347,13 +347,21 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
         Handle cases where optimizer state has different parameter groups or is missing.
         This happens when resuming with different linear_probe setting than the checkpoint.
         """
+        # Ensure checkpoint dict has optimizer_states key to prevent KeyError
+        # Lightning may try to access it before we can handle it
+        # If missing, set to empty list so Lightning knows it's not available
+        if 'optimizer_states' not in checkpoint:
+            checkpoint['optimizer_states'] = []
+        if 'lr_schedulers' not in checkpoint:
+            checkpoint['lr_schedulers'] = []
+        
+        optimizer_states = checkpoint.get('optimizer_states')
+        
         # Check if optimizer state exists and if it matches current configuration
         try:
-            # Check if checkpoint has optimizer states (might be missing if save_weights_only=True)
-            optimizer_states = checkpoint.get('optimizer_states')
             
             # Only process if optimizer_states is a non-empty list/tuple
-            if optimizer_states is not None:
+            if optimizer_states and len(optimizer_states) > 0:
                 # Check if it's iterable and has content
                 try:
                     is_iterable = isinstance(optimizer_states, (list, tuple))
@@ -411,23 +419,21 @@ class BigEarthNetv2_0_ImageClassifier(pl.LightningModule, PyTorchModelHubMixin):
                             print(f"  Optimizer will be re-initialized with current configuration.")
                             print(f"{'='*60}\n")
                             
-                            # Delete keys instead of setting to None
-                            if 'optimizer_states' in checkpoint:
-                                del checkpoint['optimizer_states']
-                            if 'lr_schedulers' in checkpoint:
-                                del checkpoint['lr_schedulers']
-            elif optimizer_states is None:
-                # Checkpoint doesn't have optimizer states (save_weights_only=True)
-                print(f"Note: Checkpoint does not contain optimizer state (save_weights_only=True). "
-                      f"Optimizer will be initialized from scratch.")
+                            # Set to empty list instead of deleting (prevents KeyError)
+                            checkpoint['optimizer_states'] = []
+                            checkpoint['lr_schedulers'] = []
+            else:
+                # Checkpoint doesn't have optimizer states (save_weights_only=True) or is empty
+                # Already set to empty list above, so Lightning will handle it
+                if not optimizer_states:  # Empty list or None
+                    print(f"Note: Checkpoint does not contain optimizer state (save_weights_only=True). "
+                          f"Optimizer will be initialized from scratch.")
         except Exception as e:
-            # If anything goes wrong, remove optimizer state to be safe
+            # If anything goes wrong, set to empty list to be safe (prevents KeyError)
             print(f"\nWARNING: Error checking optimizer state compatibility: {e}")
             print("Removing optimizer state from checkpoint to avoid errors.\n")
-            if 'optimizer_states' in checkpoint:
-                del checkpoint['optimizer_states']
-            if 'lr_schedulers' in checkpoint:
-                del checkpoint['lr_schedulers']
+            checkpoint['optimizer_states'] = []
+            checkpoint['lr_schedulers'] = []
         
         # Call parent hook
         super().on_load_checkpoint(checkpoint)
