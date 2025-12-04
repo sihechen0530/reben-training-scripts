@@ -13,15 +13,115 @@ if str(project_root) not in sys.path:
 
 import lightning.pytorch as pl
 import torch
+import torch.nn as nn
 import typer
 from configilm.ConfigILM import ILMConfiguration
 from configilm.ConfigILM import ILMType
 from configilm.extra.BENv2_utils import resolve_data_dir
+from torchvision import transforms
 
 from reben_publication.BigEarthNetv2_0_ImageClassifier import BigEarthNetv2_0_ImageClassifier
 from scripts.utils import upload_model_and_readme_to_hub, get_benv2_dir_dict, get_bands, default_trainer, default_dm, get_job_run_directory, snapshot_config_file
 
 __author__ = "Leonard Hackel - BIFOLD/RSiM TU Berlin"
+
+
+class HybridSatelliteNormalizer(nn.Module):
+    """
+    Normalization transform for satellite imagery combining 2%-98% robust scaling (with masking) + gamma correction.
+    
+    Applies:
+    1. Per-channel 2%-98% robust scaling (ignores darkest shadows and brightest clouds)
+    2. Clipping to [0, 1]
+    3. Standard ImageNet normalization (for RGB) or original normalization (for multi-channel)
+    """
+
+    def __init__(self, num_channels: int = 3, original_mean=None, original_std=None):
+        super().__init__()
+        # Standard ImageNet stats (for RGB)
+        self.imagenet_mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        self.imagenet_std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        self.gamma = 1.0 / 2.2  # linear -> sRGB
+
+        # Original normalization stats (for multi-channel)
+        self.num_channels = num_channels
+        if original_mean is not None and original_std is not None:
+            self.original_mean = torch.tensor(original_mean).view(num_channels, 1, 1)
+            self.original_std = torch.tensor(original_std).view(num_channels, 1, 1)
+        else:
+            self.original_mean = None
+            self.original_std = None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (C, H, W) tensor or (B, C, H, W) tensor.
+               Values are roughly in physical reflectance range.
+        """
+        added_batch_dim = False
+        if x.dim() == 3:
+            # (C, H, W) -> (1, C, H, W)
+            x = x.unsqueeze(0)
+            added_batch_dim = True
+        assert x.dim() == 4, "Input to HybridSatelliteNormalizer must be 3D or 4D tensor"
+
+        B, C, H, W = x.shape
+
+        # 1. CREATE MASK: valid pixels (ignore absolute black padding)
+        valid_mask = x > 1e-4  # (B, C, H, W)
+
+        # 2. ROBUST SCALING (2%-98%) with masking, per (B, C)
+        x_flat = x.view(B, C, -1)
+        mask_flat = valid_mask.view(B, C, -1)
+
+        # Defaults if not enough valid pixels
+        min_val = torch.zeros(B, C, 1, device=x.device, dtype=x.dtype)
+        max_val = torch.ones(B, C, 1, device=x.device, dtype=x.dtype)
+
+        for b in range(B):
+            for c in range(C):
+                valid_pixels = x_flat[b, c][mask_flat[b, c]]
+                n_valid = valid_pixels.numel()
+                if n_valid > 100:
+                    # 2nd and 98th percentiles on valid pixels only
+                    k2 = max(int(0.02 * n_valid), 0) + 1
+                    k98 = max(int(0.98 * n_valid), 0) + 1
+                    k2 = min(k2, n_valid)
+                    k98 = min(k98, n_valid)
+                    min_val[b, c] = torch.kthvalue(valid_pixels, k2).values
+                    max_val[b, c] = torch.kthvalue(valid_pixels, k98).values
+
+        # Reshape for broadcasting
+        min_val = min_val.view(B, C, 1, 1)
+        max_val = max_val.view(B, C, 1, 1)
+
+        # 3. Apply scaling
+        scale = (max_val - min_val).clamp_min(1e-6)
+        x = (x - min_val) / scale
+
+        # 4. Clip to [0, 1]
+        x = torch.clamp(x, 0.0, 1.0)
+
+        # 5. Gamma correction (lift mid-tones)
+        x = torch.pow(x, self.gamma)
+
+        # 6. Normalization
+        if self.num_channels == 3:
+            mean = self.imagenet_mean.to(x.device, dtype=x.dtype)
+            std = self.imagenet_std.to(x.device, dtype=x.dtype)
+        elif self.original_mean is not None and self.original_std is not None:
+            mean = self.original_mean.to(x.device, dtype=x.dtype)
+            std = self.original_std.to(x.device, dtype=x.dtype)
+        else:
+            # Per-channel normalization over spatial dims and batch
+            mean = x.mean(dim=(0, 2, 3), keepdim=True)  # (1, C, 1, 1)
+            std = x.std(dim=(0, 2, 3), keepdim=True) + 1e-6
+
+        x = (x - mean) / std
+
+        if added_batch_dim:
+            x = x.squeeze(0)
+        return x
 
 
 def main(
@@ -158,6 +258,61 @@ def main(
     hostname, data_dirs = get_benv2_dir_dict(config_path=config_path)
     data_dirs = resolve_data_dir(data_dirs, allow_mock=True)  # Allow mock data for testing
     dm = default_dm(hparams, data_dirs, img_size)
+    
+    # Apply masked robust scaling + gamma normalization for satellite imagery
+    # Extract original normalization stats before replacing
+    original_norm_transform = None
+    for transform in dm.train_transform.transforms:
+        if isinstance(transform, transforms.Normalize):
+            original_norm_transform = transform
+            break
+    
+    # Create HybridSatelliteNormalizer with appropriate channel count and original stats
+    if original_norm_transform is not None:
+        original_mean = original_norm_transform.mean.tolist() if hasattr(original_norm_transform.mean, 'tolist') else list(original_norm_transform.mean)
+        original_std = original_norm_transform.std.tolist() if hasattr(original_norm_transform.std, 'tolist') else list(original_norm_transform.std)
+        satellite_normalizer = HybridSatelliteNormalizer(
+            num_channels=channels,
+            original_mean=original_mean,
+            original_std=original_std
+        )
+    else:
+        satellite_normalizer = HybridSatelliteNormalizer(num_channels=channels)
+    
+    # Set to eval mode (no gradients needed for transforms)
+    satellite_normalizer.eval()
+    
+    # Update train transform: keep augmentation, replace Normalize with SatelliteNormalizer
+    train_transforms_list = []
+    for transform in dm.train_transform.transforms:
+        if isinstance(transform, transforms.Normalize):
+            # Replace Normalize with SatelliteNormalizer
+            train_transforms_list.append(satellite_normalizer)
+        else:
+            # Keep other transforms (augmentations)
+            train_transforms_list.append(transform)
+    dm.train_transform = transforms.Compose(train_transforms_list)
+    
+    # Also update validation and test transforms for consistency
+    if hasattr(dm, 'val_transform') and dm.val_transform is not None:
+        val_transforms_list = []
+        for transform in dm.val_transform.transforms:
+            if isinstance(transform, transforms.Normalize):
+                val_transforms_list.append(satellite_normalizer)
+            else:
+                val_transforms_list.append(transform)
+        dm.val_transform = transforms.Compose(val_transforms_list)
+    
+    if hasattr(dm, 'test_transform') and dm.test_transform is not None:
+        test_transforms_list = []
+        for transform in dm.test_transform.transforms:
+            if isinstance(transform, transforms.Normalize):
+                test_transforms_list.append(satellite_normalizer)
+            else:
+                test_transforms_list.append(transform)
+        dm.test_transform = transforms.Compose(test_transforms_list)
+    
+    print(f"Applied masked 2%-98% scaling + gamma (HybridSatelliteNormalizer) to dataset transforms (channels={channels})")
 
     # Handle checkpoint resume
     ckpt_path = None
